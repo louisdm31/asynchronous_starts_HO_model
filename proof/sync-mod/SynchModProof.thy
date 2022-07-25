@@ -13,8 +13,13 @@ assumes star:"ALL p n. k_mod.path HO xi p n k"
   and loop:"ALL p r. p : HO r p"
   and run: "HORun (k_mod.gen_HOMachine k) rho HO" 
   and k2:"k > 2"
-  and complete:"ALL p. EX t. rho t p ~= Asleep"
+  and complete:"EX t. ALL p. rho t p ~= Asleep"
 begin
+
+lemma nonAsleepAgain2:
+assumes "rho t p ~= Asleep"
+shows "EX s. rho (t+i) p = Active s"
+using nonAsleepAgain[of rho t p _ _ _ i] run assms unfolding HORun_def by auto
 
 lemma sending:
 assumes s:"rho r p = Active s"
@@ -327,7 +332,7 @@ lemma A3:
 assumes "rho r xi = Active sp"
 and "rho (Suc r) xi = Active ssp"
 and "level sp = 0"
-and "level ssp = 1"
+and "level ssp > 0"
 and "rho (r+i) q = Active sq"
 and "rho (r+Suc i) q = Active ssq"
 and "level sq  < level ssq"
@@ -340,10 +345,10 @@ proof (rule ccontr)
   have "Suc r >= k"
   proof (rule ccontr)
     assume "~ Suc r >= k"
-    thus "False" using assms A2 by (metis not_le zero_neq_one)
+    thus "False" using assms A2 by (metis neq0_conv not_le_imp_less)
   qed
   hence lev1p:"k_mod.goto_level1 k ?msgp sp" using assms transp
-    unfolding k_mod.gen_nextState_def k_mod.goto_level1_def by (metis k_mod.goto_level2_def zero_neq_one) 
+    unfolding k_mod.gen_nextState_def k_mod.goto_level1_def by (metis k_mod.goto_level2_def less_numeral_extra(3)) 
   hence "k_mod.isSynch k ?msgp" unfolding k_mod.goto_level1_def by auto
   from loop have self_path:"k_mod.path HO xi xi (Suc r-k+i) (k-i)" unfolding k_mod.path_def by auto
   from transp lev1p have "x ssp mod k = 0"
@@ -363,7 +368,7 @@ proof (rule ccontr)
   thus "False" using val_xi `~ i >= k` `i > 0` by auto
 qed 
 
-definition active_path where 
+definition active_path where
 "active_path p q n D == EX seq. seq 0 = p & seq D = q &
     (ALL i < D. rho (n+i) (seq (Suc i)) ~= Asleep & seq i : HO (n+Suc i) (seq (Suc i)))"
 
@@ -372,13 +377,15 @@ assumes sp:"rho t p = Active sp"
 shows "active_path p q t r --> rho (t+r) q = Active sq --> forc sp <= forc sq"
 proof (induction r arbitrary:sq q)
   case 0
-  show "active_path p q t 0 --> rho (t+0) q = Active sq --> forc sp <= forc sq" using sp unfolding active_path_def by fastforce
+  show "active_path p q t 0 --> rho (t+0) q = Active sq --> forc sp <= forc sq"
+    using sp unfolding active_path_def by fastforce
 next
   case (Suc rr)
   show "active_path p q t (Suc rr) --> rho (t+Suc rr) q = Active sq --> forc sp <= forc sq"
   proof (rule impI)+
     assume "active_path p q t (Suc rr)" and sq:"rho (t+Suc rr) q = Active sq"
-    then obtain seq where seq0:"seq 0 = p" and "seq (Suc rr) = q" and seqSuc:"ALL j < Suc rr. rho (t+j) (seq (Suc j)) ~= Asleep & seq j : HO (t+Suc j) (seq (Suc j))"
+    then obtain seq where seq0:"seq 0 = p" and "seq (Suc rr) = q"
+      and seqSuc:"ALL j < Suc rr. rho (t+j) (seq (Suc j)) ~= Asleep & seq j : HO (t+Suc j) (seq (Suc j))"
       unfolding active_path_def by auto
     have "rho (t+rr) (seq rr) ~= Asleep"
     proof (cases "rr")
@@ -387,7 +394,7 @@ next
     next
       case (Suc rrr)
       hence "rho (t+rr-1) (seq rr) ~= Asleep" using `seq (Suc rr) = q` seqSuc by auto
-      thus "rho (t+rr) (seq rr) ~= Asleep" using run nonAsleepAgain
+      thus "rho (t+rr) (seq rr) ~= Asleep" using run nonAsleepAgain2
         unfolding HORun_def by (smt (z3) Suc add.commute add_Suc less_add_Suc2 plus_1_eq_Suc proc_state.simps(3) seqSuc)
     qed
     then obtain sqq where sqq:"rho (t+rr) (seq rr) = Active sqq" using run
@@ -588,7 +595,7 @@ next
   from seq obtain ss where ss:"rho (t+ii) (seq (Suc ii)) = Active ss" and "seq (Suc ii) : HO (t+Suc (Suc ii)) p"
     using `seq (Suc (Suc ii)) = p` by (cases "rho (t+ii) (seq (Suc ii))") auto
   from ss obtain sss where sss:"rho (t+Suc ii) (seq (Suc ii)) = Active sss"
-    using nonAsleepAgain[of rho "t+ii" "seq (Suc ii)" _ _ _ 1] run unfolding HORun_def by fastforce
+    using nonAsleepAgain2[of "t+ii" "seq (Suc ii)" 1] run by auto
   hence transs:"k_mod.gen_nextState k (seq (Suc ii)) ss msgs sss" using ss transition unfolding msgs_def by auto
   have ih:"Suc (level sq) < k_mod.maxForce msgs | (Suc (level sq) = k_mod.maxForce msgs & k_mod.minMsgs msgs <= ii)"
     using Suc.IH ss `active_path q (seq (Suc ii)) t (Suc ii)` msgs_def by auto
@@ -654,7 +661,7 @@ proof -
   hence "rho (t+i-1) (seq (k-1)) ~= Asleep" using k2 `k <= i`
     by (smt (z3) Nat.add_diff_assoc One_nat_def Suc_1 Suc_diff_Suc Suc_lessD diff_Suc_1 group_cancel.add1 le_add1 le_add_diff_inverse2 less_eq_Suc_le plus_1_eq_Suc)
   from this obtain sm where sm:"rho (t+i) (seq (k-1)) = Active sm"
-    using nonAsleepAgain[of rho "t+i-1" "seq (k-1)" _ _ _ 1] run k2 `k <= i` unfolding HORun_def by fastforce
+    using nonAsleepAgain2[of "t+i-1" "seq (k-1)" 1] run k2 `k <= i` by auto
   let ?exseq = "%l. if l <= i-k then xi else seq (l - (i-k))"
   have extrem:"?exseq 0 = xi & ?exseq i = p" using `seq k = p` `k <= i` k2 by force 
   moreover have expat:"ALL l < i. rho (Suc t+l) (?exseq (Suc l)) ~= Asleep & ?exseq l : HO (Suc (Suc t)+l) (?exseq (Suc l))"
@@ -664,8 +671,8 @@ proof -
     show "rho (Suc t+l) (?exseq (Suc l)) ~= Asleep & ?exseq l : HO (Suc (Suc t)+l) (?exseq (Suc l))" 
     proof (cases "l < i-k")
       case True
-      hence "rho (Suc t+l) (?exseq (Suc l)) ~= Asleep" using nonAsleepAgain[of rho "Suc t" xi] run
-        unfolding HORun_def by (smt (verit) Suc_leI assms(4) proc_state.simps(3))
+      hence "rho (Suc t+l) (?exseq (Suc l)) ~= Asleep" using nonAsleepAgain2[of "Suc t" xi] run
+        by (smt (verit) Suc_leI assms(4) proc_state.simps(3))
       thus "rho (Suc t+l) (?exseq (Suc l)) ~= Asleep & ?exseq l : HO (Suc (Suc t)+l) (?exseq (Suc l))" using loop True by auto
     next
       case False
@@ -710,7 +717,7 @@ proof (induction i arbitrary: ss)
   thus ?case using starting[of 0 p s] assms unfolding k_mod.gen_initState_def by auto
 next
   case (Suc rr)
-  obtain sss where sss:"rho (r+rr) p = Active sss" using nonAsleepAgain[of rho r p _ _ _ rr] run s unfolding HORun_def by fastforce
+  obtain sss where sss:"rho (r+rr) p = Active sss" using nonAsleepAgain2[of r p rr] run s by auto
   let ?msgp = "HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (r+Suc rr) p) (rho (r+rr))"
   have "?msgp p = Content sss" using sss loop sending[of "r+rr" p sss] by simp
   have "k_mod.forceMsgs (?msgp p) : k_mod.forceMsgs ` (range ?msgp)" by blast
@@ -723,6 +730,8 @@ definition levup where
 "levup f c p == EX sp ssp. rho c p = Active ssp & level ssp = f & (if f = 0 then c > 0 --> rho (c-1) p = Asleep else rho (c-1) p = Active sp & level sp = f-1)"
 definition L where
 "L = {(f,c) :: nat * nat | f c p. levup f c p}"
+definition L_minus_xi where
+"L_minus_xi = {(f,c) :: nat * nat | f c p. p ~= xi & levup f c p}"
 definition ref_lvup where
 "ref_lvup p t = (let msgs = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc t) p) (rho t) in (k_mod.maxForce msgs-1, t-k_mod.minMsgs msgs))"
 
@@ -770,7 +779,7 @@ proof (rule ccontr)
       using someI_ex[of "%p. levup f t1 p"] someI_ex[of "%p. levup f t2 p"] unfolding pLf_def L_def by auto
     from this obtain sp ssp where "rho t1 (pLf t1) = Active sp" and "level sp = f"
       "rho (t2-1) (pLf t2) = (if f = 0 then Asleep else Active ssp)" and "level ssp = f-1" using `t1 < t2` unfolding levup_def by auto
-    moreover from this have "f > 0" using run nonAsleepAgain[of rho t1 "pLf t1" _ _ _ "t2-t1-1"] `t1 < t2` `pLf t1 = pLf t2` unfolding HORun_def by auto
+    moreover from this have "f > 0" using run nonAsleepAgain2[of t1 "pLf t1" "t2-t1-1"] `t1 < t2` `pLf t1 = pLf t2` by auto
     ultimately show "False" using level_growing[of t1 "pLf t1" sp "t2-t1-1" ssp] `t1 < t2` `pLf t1 = pLf t2` by auto
   qed
   hence "inj_on pLf (snd ` Lf f)" by (metis (mono_tags, hide_lams) inj_on_def linorder_neqE_nat)
@@ -808,10 +817,33 @@ proof -
     less_eq_prod_simp less_imp_Suc_add msgs_def msgss_def not_less_eq plus_1_eq_Suc zero_less_Suc)
 qed
 
+lemma growing_path:
+assumes "active_path p q (Suc t) i"
+and "rho t p ~= Asleep"
+shows "ref_lvup p t <= ref_lvup q (t+i)" using assms
+proof (induction i arbitrary:q)
+  case 0
+  thus ?case unfolding active_path_def by auto
+next
+  case (Suc ii)
+  from Suc.prems obtain seq where "seq 0 = p" and "seq (Suc ii) = q" and
+    "ALL i < Suc ii. rho (Suc t + i) (seq (Suc i)) ~= Asleep & seq i : HO (Suc t + Suc i) (seq (Suc i))"
+    unfolding active_path_def by auto
+  hence pat:"active_path p (seq ii) (Suc t) ii" and link:"seq ii : HO (Suc t+Suc ii) q" and
+    awak:"rho (Suc t+(ii - 1)) (seq (Suc (ii - 1))) ~= Asleep" and
+    awaq:"rho (Suc t+ii) q ~= Asleep"
+    unfolding active_path_def by auto
+  hence "ref_lvup p t <= ref_lvup (seq ii) (t+ii)" using Suc by auto
+  moreover have "ref_lvup (seq ii) (t+ii) <= ref_lvup q (t+Suc ii)"
+    using awaq awak link assms(2) growing_L[of "t+ii" "seq ii" _ q] 
+    by (metis (no_types, hide_lams) Suc_pred' `seq 0 = p` add.commute add_Suc_right add_cancel_right_left neq0_conv the_state.cases) 
+  ultimately show "ref_lvup p t <= ref_lvup q (t+Suc ii)" by auto
+qed
+
 lemma monovalent_stable:
-assumes "ALL p : V. EX sp. rho t p = Active sp & x sp mod k = c mod k"
-and "ALL j. ALL p : V. HO (t+j) p <= V"
-shows "ALL p : V. EX sp. rho (t+i) p = Active sp & x sp mod k = (c+i) mod k"
+assumes "ALL p sp. rho t p = Active sp --> x sp mod k = c mod k"
+and "ALL p. rho t p ~= Asleep"
+shows "ALL p sp. rho (t+i) p = Active sp --> x sp mod k = (c+i) mod k"
 proof (induction i)
   case 0
   show ?case using assms by auto
@@ -820,21 +852,19 @@ next
   show ?case
   proof 
     fix p
-    assume "p : V"
     define msgs where "msgs = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t+ii)) p) (rho (t+ii))"
     obtain sp ssp where sp:"rho (t+Suc ii) p = Active sp" and ssp:"rho (t+ii) p = Active ssp"
-      using `p : V` assms(1) nonAsleepAgain[of rho t p _ HO _ii] nonAsleepAgain[of rho t p _ HO _ "Suc ii"] run
-      unfolding HORun_def by fastforce
+      using assms(2) nonAsleepAgain2[of t p ii] nonAsleepAgain2[of t p "Suc ii"] by metis
     from this obtain q sq where sq:"rho (t+ii) q = Active sq" and "x sq = k_mod.minMsgs msgs" and "q : HO (Suc (t+ii)) p"
       using adopt_incoming[of "t+ii" p ssp msgs] msgs_def by blast
-    hence "x sq mod k = (c+ii) mod k" using sq Suc.IH `p : V` assms by (metis add_Suc_right proc_state.inject subsetD)
+    hence "x sq mod k = (c+ii) mod k" using sq Suc.IH assms by metis
     moreover have "k_mod.gen_nextState k p ssp msgs sp" using sp ssp 
       transition[of "t+ii" p ssp sp] unfolding msgs_def by auto
     hence "x sp mod k = Suc (k_mod.minMsgs msgs) mod k"
       unfolding k_mod.gen_nextState_def k_mod.goto_level1_def k_mod.goto_level2_def
       by (smt (z3) One_nat_def Suc_1 Suc_diff_1 Suc_lessD k2 mod_Suc mod_less)
-    ultimately show "EX sp. rho (t+Suc ii) p = Active sp & x sp mod k = (c+Suc ii) mod k"
-      using `x sq = k_mod.minMsgs msgs` sp by (metis add_Suc_right mod_Suc_eq)
+    ultimately show "ALL sp. rho (t+Suc ii) p = Active sp --> x sp mod k = (c+Suc ii) mod k"
+      using `x sq = k_mod.minMsgs msgs` sp by (metis add_Suc_right mod_Suc_eq proc_state.inject)
   qed
 qed
 
@@ -870,172 +900,168 @@ next
 qed
 
 lemma monovalent_termine:
-assumes "ALL p : V. EX sp. rho t p = Active sp & x sp mod k = 0"
-and "ALL j. ALL p : V. HO (t+j) p <= V"
-shows "ALL p : V. ALL sp. rho (t+3*k) p = Active sp --> level sp = 2"
+assumes "ALL p sp. rho t p = Active sp --> x sp mod k = 0"
+and "ALL p. rho (t-1) p ~= Asleep"
+and "t > 0"
+shows "ALL p. ALL sp. rho (t+2*k) p = Active sp --> level sp = 2"
 proof -
+  have act:"ALL p. rho t p ~= Asleep" using assms nonAsleepAgain2[of "t-1" _ 1]
+    by (metis add.right_neutral dual_order.strict_trans1 le_add_diff_inverse2 less_nat_zero_code not_less_eq_eq plus_1_eq_Suc proc_state.simps(3))
   define som where "som = (%i p. SOME sp. rho (t+i) p = Active sp)"
-  have som:"ALL i p. p :V --> rho (t+i) p = Active (som i p)"
+  have som:"ALL i p. rho (t+i) p = Active (som i p)"
   proof (rule+)
     fix i p
-    assume "p : V"
-    from this obtain sp where "rho t p = Active sp" using assms(1) by auto
-    hence "EX ssp. rho (t+i) p = Active ssp" using nonAsleepAgain[of rho t p _ HO _ i]
-      run unfolding HORun_def by fastforce
+    obtain sp where "rho t p = Active sp" using act by (cases "rho t p") auto
+    hence "EX ssp. rho (t+i) p = Active ssp" using nonAsleepAgain2 run by auto
     thus "rho (t+i) p = Active (som i p)" using someI_ex[of "%sp. rho (t+i) p = Active sp"] unfolding som_def by auto
   qed
-  hence mod:"ALL p : V. x (som k p) mod k = 0" using monovalent_stable[of V t 0 k] assms by simp
+
+  hence mod:"ALL p. x (som 0 p) mod k = 0" using assms som by (metis add.right_neutral)
   let ?op = "%b. if b then conc else ready"
-  have forever:"ALL b. ALL lim. ALL i >= lim. (ALL p : V. (?op b) (som lim p)) --> (ALL p : V. (?op b) (som i p))" (is "ALL b. ?P b")
+  have forever:"ALL b lim p. ALL i >= lim. (ALL p. ?op b (som lim p)) --> ?op b (som i p)" (is "ALL b. ?P b")
   proof (rule+)
     fix b lim i p
-    assume "i >= lim" and "p : V" and "ALL p : V. (?op b) (som lim p)"
-    show "(?op b) (som i p)" using `i >= lim` and `p : V`
+    assume "i >= lim" and "ALL p. (?op b) (som lim p)"
+    show "(?op b) (som i p)" using `i >= lim`
     proof (induction "i-lim" arbitrary:p i)
       case 0
-      thus ?case using `ALL p : V. (?op b) (som lim p)` by auto
+      thus ?case using `ALL p. (?op b) (som lim p)` by auto
     next
       case (Suc ii)
       define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+i) p) (rho (t+i-1))"
       obtain q sq where "rho (t+i-1) q = Active sq" and "x sq = k_mod.minMsgs msgp" and "q : HO (t+i) p"
-        using adopt_incoming[of "t+i-1" p "som (i-1) p" msgp] som Suc k2 msgp_def 
-        by (smt (z3) Nat.add_diff_assoc Suc_diff_1 add_gr_0 diff_is_0_eq' le_add_diff_inverse2 nat_le_linear zero_less_Suc)
-      hence "k_mod.minMsgs msgp mod k = (i-1) mod k" using monovalent_stable[of V t 0 "i-1"] assms Suc(2) som
-        by (smt (verit, del_insts) Nat.add_diff_assoc Suc(3) Suc.prems(2) add.commute add.right_neutral diff_is_0_eq'
-        in_mono le_add1 le_add_diff_inverse mod_add_left_eq nat_le_linear plus_1_eq_Suc proc_state.inject)
-      hence "ALL p : V. x (som (i-1) p) mod k = k_mod.minMsgs msgp mod k"
-        using monovalent_stable[of V t 0 "i-1"] assms som by simp
+        using adopt_incoming[of "t+i-1" p "som (i-1) p" msgp] som Suc k2 msgp_def
+        by (smt (verit, ccfv_threshold) Nat.add_diff_assoc le_add1 le_add2 le_trans ordered_cancel_comm_monoid_diff_class.add_diff_inverse plus_1_eq_Suc)
+      hence "x sq mod k = (i-1) mod k"
+        using monovalent_stable[of t 0 "i-1"] assms(1) 
+        by (metis (no_types, lifting) Nat.add_diff_assoc One_nat_def Suc.hyps(2) Suc.prems Suc_leI add.left_neutral add_gr_0 act
+        bits_mod_0 le_add_diff_inverse2 plus_1_eq_Suc zero_less_one)
+      hence "ALL p. x (som (i-1) p) mod k = k_mod.minMsgs msgp mod k"
+        using monovalent_stable[of "t" 0 "i-1"] assms act som `x sq = k_mod.minMsgs msgp` by auto
       moreover have cont:"ALL p. msgp p ~= Void --> msgp p = Content (som (i-1) p)"
       proof (rule+)
         fix qq
         assume "msgp qq ~= Void"
         hence "qq : HO (t+i) p" using assms(2) unfolding HOrcvdMsgs_def msgp_def by auto
         thus "msgp qq = Content (som (i-1) qq)" using som sending[of "t+(i-1)" qq "som (i-1) q"] assms(2) 
-          unfolding msgp_def by (smt (z3) Suc(2) Suc.prems(2) add_Suc_right diff_Suc_1 in_mono less_imp_Suc_add sending zero_less_Suc zero_less_diff)
+          unfolding msgp_def by (smt (z3) Suc(2) Suc_diff_1 add_Suc_right diff_Suc_1 diff_le_self dual_order.strict_trans1 sending zero_less_Suc)
       qed
-      ultimately have "b --> k_mod.isSynch k msgp" using Suc(1)[of "i-1"] Suc(2) Suc(3) unfolding k_mod.isSynch_def HOrcvdMsgs_def
-        by (smt (z3) HOrcvdMsgs_def One_nat_def Suc.prems(2) assms(2) diff_Suc_1 diff_commute diff_diff_cancel diff_is_0_eq' in_mono msgp_def nat_le_linear)
+      ultimately have "b --> k_mod.isSynch k msgp" using Suc(1)[of "i-1"] Suc(2) Suc(3)
+        unfolding k_mod.isSynch_def HOrcvdMsgs_def by auto
       moreover have "~ b --> k_mod.isReady msgp" using Suc(1)[of "i-1"] Suc(2) Suc(3) cont unfolding k_mod.isReady_def 
-        by (smt (z3) HOrcvdMsgs_def One_nat_def Suc.prems(2) assms(2) diff_Suc_1 diff_commute diff_diff_cancel diff_is_0_eq'
-        in_mono message.distinct(3) message.inject msgp_def nat_le_linear)
+        by (metis (mono_tags, lifting) Suc_diff_1 Zero_not_Suc diff_Suc_1 diff_commute diff_is_0_eq'
+        dual_order.strict_trans1 message.distinct(3) message.inject not_less_eq_eq zero_less_Suc)
       moreover have "k_mod.gen_nextState k p (som (i-1) p) msgp (som i p)" 
         using transition[of "t+i-1" p "som i p" "som i p"] som Suc(2) unfolding msgp_def
-        by (smt (verit, ccfv_SIG) Nat.add_diff_assoc Suc.prems(2) Suc_diff_1 add.right_neutral
-        add_Suc_right diff_is_0_eq less_imp_Suc_add nat_le_linear plus_1_eq_Suc transition zero_less_Suc zero_less_diff)
+        by (smt (z3) Nat.add_diff_assoc One_nat_def Suc_diff_1 Suc_leI add_gr_0 diff_le_self
+        dual_order.strict_trans1 execution.transition execution_axioms zero_less_Suc)
       moreover have "~ b --> level (som i p) > 0"
-        using ready_level som `ALL p : V. (?op b) (som lim p)` Suc.prems(2) 
-        level_growing[of "t+lim" p "som lim p" "i-lim" "som i p"] Suc(3) Suc.prems(2) by fastforce
+        using ready_level som `ALL p. (?op b) (som lim p)`
+        level_growing[of "t+lim" p "som lim p" "i-lim" "som i p"] Suc(3)
+        by (metis (mono_tags, lifting) add.assoc dual_order.strict_trans1 le_add_diff_inverse)
       ultimately show "(?op b) (som i p)" unfolding k_mod.gen_nextState_def by auto
     qed
   qed
-  moreover have "ALL p : V. rho (t+k-1) p = Active (som (k-1) p)"
-    using k2 som by (metis Nat.diff_add_assoc One_nat_def dual_order.strict_trans1 less_2_cases_iff less_imp_le_nat)
-  hence "ALL p : V. k_mod.gen_nextState k p (som (k-1) p) (HOrcvdMsgs (k_mod.gen_HOMachine k) p
-    (HO (t+k) p) (rho (t+(k)-1))) (som k p)"
-    using transition[of "t+k-1" _ "som (k-1) _" "som k _"] som k2
-    by (smt (z3) Suc_pred' add_Suc_right diff_diff_cancel diff_zero less_imp_Suc_add mod_less_divisor zero_less_Suc zero_less_diff)
-  hence "ALL p : V. conc (som k p)" using mod unfolding k_mod.gen_nextState_def by meson
-  ultimately have conc_forever:"ALL i >= k. ALL p : V. conc (som i p)" (is "ALL i >= k. ?Q i") using allE[of ?P True] by presburger
-  hence "ALL p : V. conc (som (k-1+k) p)" using allE[of ?Q "k-1+k"] k2 diff_le_mono le_add2 by presburger
-  have "ALL p : V. ready (som (k+k) p)"
+  moreover define som_minus_1 where "som_minus_1 = (%p. (SOME sp. rho (t-1) p = Active sp))"
+  have "ALL p. rho (t-1) p = Active (som_minus_1 p)"
+  proof 
+    fix p
+    have "EX sp. rho (t-1) p = Active sp" (is "EX sp. ?P sp") using assms(2) by (cases "rho (t-1) p") auto
+    thus "rho (t-1) p = Active (som_minus_1 p)" using someI_ex[of ?P] unfolding som_minus_1_def by auto
+  qed
+  hence "ALL p. k_mod.gen_nextState k p (som_minus_1 p) (HOrcvdMsgs (k_mod.gen_HOMachine k) p
+    (HO t p) (rho (t-1))) (som 0 p)"
+    using transition[of "t-1" _ "som_minus_1 _" "som 0 _"] som assms(3)
+    by (metis Suc_pred' add.right_neutral)
+  hence "ALL p. conc (som 0 p)" using mod monovalent_stable[of t 0 0] assms bits_mod_0 mod_add_self2 som act unfolding k_mod.gen_nextState_def by auto
+  ultimately have conc_forever:"ALL i >= 0. ALL p. conc (som i p)" (is "ALL i >= 0. ?Q i") using allE[of ?P True] by presburger
+  hence "ALL p. conc (som (k-1) p)" using le0 by presburger
+  have "ALL p. ready (som k p)"
   proof (rule+)
     fix p
-    assume "p : V"
+    define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+k) p) (rho (t-1+k))"
+    have msgp:"msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t + k - 1)) p) (rho (t + k - 1))"
+      using k2 assms(3) unfolding msgp_def by fastforce
+    moreover have "rho (t + k - 1) p = Active (som (k - 1) p)" using som
+      by (metis Nat.add_diff_assoc k2 le_add1 less_imp_Suc_add plus_1_eq_Suc)
+    ultimately obtain q sq where sq:"rho (t+k-1) q = Active sq" and "x sq = k_mod.minMsgs msgp" and "q : HO (Suc (t+k-1)) p"
+      using adopt_incoming[of "t+k-1" p "som (k-1) p" msgp] by auto
+    hence "rho (t+(k-1)) q = Active sq" using som k2 sq by (smt (z3) One_nat_def Suc_1 Suc_lessD Suc_pred' add_Suc_right diff_Suc_1 group_cancel.add1)
+    moreover have k_k_1:"ALL q. EX sq. rho (t+(k-1)) q = Active sq & x sq mod k = (k-1) mod k"
+      using monovalent_stable[of t 0 "k-1"] assms act k2 by (metis add.left_neutral bits_mod_0 som)
+    ultimately have "x sq mod k = (k-1) mod k" by (metis proc_state.inject)
+    hence "k_mod.minMsgs msgp mod k = k - 1" using sq som `x sq = k_mod.minMsgs msgp`
+      by (metis diff_less dual_order.strict_trans k2 less_2_cases_iff mod_less zero_less_one)
+    moreover have cont:"ALL p. msgp p ~= Void --> msgp p = Content (som (k-1) p)"
+    proof (rule+)
+      fix qq
+      assume "msgp qq ~= Void"
+      hence "qq : HO (t+k) p" using assms(2) unfolding HOrcvdMsgs_def msgp_def by auto
+      thus "msgp qq = Content (som (k-1) qq)" using som sending[of "t+(k-1)" qq "som (k-1) qq"] assms(2) unfolding msgp_def
+        by (smt (z3) Suc_diff_1 add_Suc_right diff_Suc_1 dual_order.strict_trans k2 less_2_cases_iff msgp msgp_def)
+    qed
+    have "ALL p. x (som (k-1) p) mod k = k_mod.minMsgs msgp mod k"
+      using `k_mod.minMsgs msgp mod k = k - 1` k_k_1 som
+      by (metis `x sq = k_mod.minMsgs msgp` `x sq mod k = (k - 1) mod k` proc_state.inject)
+    hence "k_mod.isSynch k msgp" using som `ALL p. conc (som (k - 1) p)` cont unfolding k_mod.isSynch_def
+      by (smt (z3) HOrcvdMsgs_def Suc_diff_1 msgp ab_semigroup_add_class.add_ac(1)
+      add_gr_0 assms(2) conc_forever dual_order.strict_trans k2 le_add1 le_add_diff less_2_cases_iff plus_1_eq_Suc subsetD)
+    moreover have "k_mod.gen_nextState k p (som (k-1) p) msgp (som k p)"
+      using transition[of "t+(k-1)" p "som (k-1) p" "som (k) p"] k2 som
+      by (smt (z3) Suc_diff_1 msgp ab_semigroup_add_class.add_ac(1) add_Suc_right diff_Suc_1 dual_order.strict_trans less_2_cases_iff)
+    ultimately show "ready (som (k) p)" using `k_mod.minMsgs msgp mod k = k - 1` unfolding k_mod.gen_nextState_def
+      by (smt (z3) Suc_1 Suc_diff_1 `k_mod.isSynch k msgp` add_gr_0 k2 k_mod.goto_level1_def less_trans mod_Suc neq0_conv plus_1_eq_Suc zero_less_one)
+  qed
+  hence "ALL i >= k. ALL p. ready (som i p)" (is "ALL i >= k. ?Q i") using allE[of ?P False] forever by (smt (z3))
+  hence ready_forever:"ALL p. ready (som (k-1+k) p)" using allE[of ?Q "k-1+k"] k2 diff_le_mono le_add2 by auto
+  have "ALL p. level (som (k+k) p) = 2"
+  proof (rule+)
+    fix p
     define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+k+k) p) (rho (t+k-1+k))"
     have msgp:"msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t + k + k - 1)) p) (rho (t + k + k - 1))"
       using k2 unfolding msgp_def by fastforce
-    moreover have "rho (t + k + k - 1) p = Active (som (k + k - 1) p)" using som `p : V`
+    moreover have "rho (t + k + k - 1) p = Active (som (k + k - 1) p)" using som
       by (metis Nat.add_diff_assoc add.assoc k2 le_add1 less_imp_Suc_add plus_1_eq_Suc)
     ultimately obtain q sq where sq:"rho (t+k+k-1) q = Active sq" and "x sq = k_mod.minMsgs msgp" and "q : HO (Suc (t+k+k-1)) p"
       using adopt_incoming[of "t+k+k-1" p "som (k+k-1) p" msgp] by auto
-    hence "q : V" using assms k2 by (smt (z3) Nat.diff_add_assoc2 Suc_1 Suc_lessD Suc_pred' `p \<in> V` add.commute
-      add.left_commute add.right_neutral mod_le_divisor plus_1_eq_Suc subsetD trans_less_add2)
     hence "rho (t+(k+k-1)) q = Active sq" using som k2 sq by (smt (z3) One_nat_def Suc_1 Suc_lessD Suc_pred' add_Suc_right diff_Suc_1 group_cancel.add1)
-    hence "x sq mod k = (k+k-1) mod k" using monovalent_stable[of V t 0 "k+k-1"] assms `q : V` k2 by auto
-    hence "k_mod.minMsgs msgp mod k = k - 1" using sq som `q : V` `x sq = k_mod.minMsgs msgp`
-      by (metis Nat.add_diff_assoc diff_less dual_order.strict_trans k2 le_add1 less_2_cases_iff less_imp_Suc_add mod_add_self1 mod_less plus_1_eq_Suc zero_less_one)
+    moreover have k_k_k_1:"ALL q. EX sq. rho (t+(k+k-1)) q = Active sq & x sq mod k = (k+k-1) mod k"
+      using monovalent_stable[of t 0 "k+k-1"] assms(1) by (metis add.left_neutral act bits_mod_0 som)
+    ultimately have "x sq mod k = (k+k-1) mod k" by (metis proc_state.inject)
+    hence "k_mod.minMsgs msgp mod k = k - 1" using sq som `x sq = k_mod.minMsgs msgp`
+      by (smt (z3) One_nat_def Suc_diff_1 add_gr_0 diff_Suc_1 diff_is_0_eq' dual_order.strict_trans k2 less_2_cases_iff mod_Suc mod_add_self2 mod_self zero_le_one zero_neq_one)
     moreover have cont:"ALL p. msgp p ~= Void --> msgp p = Content (som (k+k-1) p)"
     proof (rule+)
       fix qq
       assume "msgp qq ~= Void"
       hence "qq : HO (t+k+k) p" using assms(2) unfolding HOrcvdMsgs_def msgp_def by auto
-      thus "msgp qq = Content (som (k+k-1) qq)" using som sending[of "t+(k+k-1)" qq "som (k+k-1) q"] assms(2) unfolding msgp_def
-        by (smt (z3) Nat.add_diff_assoc2 Suc_diff_1 `p \<in> V` add.commute add.left_commute k2 le_add1 less_imp_Suc_add plus_1_eq_Suc sending subsetD zero_less_Suc)
-    qed
-    have "ALL p : V. x (som (k+k-1) p) mod k = k_mod.minMsgs msgp mod k"
-      using `k_mod.minMsgs msgp mod k = k - 1` monovalent_stable[of V t 0 "k+k-1"] assms
-      by (smt (verit, best) Nat.add_diff_assoc add.commute add.right_neutral add_diff_inverse_nat diff_is_0_eq'
-      le_add1 less_imp_Suc_add mod_0 mod_add_left_eq mod_add_self2 nat_le_linear plus_1_eq_Suc proc_state.inject som zero_less_diff)
-    hence "k_mod.isSynch k msgp" using `q : V` som `ALL p : V. conc (som (k - 1 + k) p)` cont unfolding k_mod.isSynch_def
-      by (smt (z3) HOrcvdMsgs_def Suc_diff_1 msgp `p : V` ab_semigroup_add_class.add_ac(1)
-      add_gr_0 assms(2) conc_forever dual_order.strict_trans k2 le_add1 le_add_diff less_2_cases_iff plus_1_eq_Suc subsetD)
-    moreover have "k_mod.gen_nextState k p (som (k+k-1) p) msgp (som (k+k) p)"
-      using transition[of "t+(k+k-1)" p "som (k+k-1) p" "som (k+k) p"] `p : V` k2 som
-      by (smt (z3) Suc_diff_1 msgp ab_semigroup_add_class.add_ac(1) add_Suc_right diff_Suc_1 dual_order.strict_trans less_2_cases_iff)
-    ultimately show "ready (som (k+k) p)" using `k_mod.minMsgs msgp mod k = k - 1` unfolding k_mod.gen_nextState_def
-      by (smt (z3) Suc_1 Suc_diff_1 `k_mod.isSynch k msgp` add_gr_0 k2 k_mod.goto_level1_def less_trans mod_Suc neq0_conv plus_1_eq_Suc zero_less_one)
-  qed
-  hence "ALL i >= k+k. ALL p : V. ready (som i p)" (is "ALL i >= k+k. ?Q i") using allE[of ?P False] forever by (smt (z3))
-  hence ready_forever:"ALL p : V. ready (som (k+k-1+k) p)" using allE[of ?Q "k+k-1+k"] k2 diff_le_mono le_add2
-    by (metis Nat.add_diff_assoc Suc_1 Suc_lessD add.commute add_le_cancel_left less_imp_le_nat)
-  have "ALL p : V. level (som (k+k+k) p) = 2"
-  proof (rule+)
-    fix p
-    assume "p : V"
-    define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+k+k+k) p) (rho (t+k+k-1+k))"
-    have msgp:"msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t + k + k + k - 1)) p) (rho (t + k + k + k - 1))"
-      using k2 unfolding msgp_def by fastforce
-    moreover have "rho (t + k + k + k - 1) p = Active (som (k + k + k - 1) p)" using som `p : V`
-      by (metis Nat.add_diff_assoc add.assoc k2 le_add1 less_imp_Suc_add plus_1_eq_Suc)
-    ultimately obtain q sq where sq:"rho (t+k+k+k-1) q = Active sq" and "x sq = k_mod.minMsgs msgp" and "q : HO (Suc (t+k+k+k-1)) p"
-      using adopt_incoming[of "t+k+k+k-1" p "som (k+k+k-1) p" msgp] by auto
-    hence "q : V" using assms k2 by (smt (z3) Nat.diff_add_assoc2 Suc_1 Suc_lessD Suc_pred' `p \<in> V` add.commute
-      add.left_commute add.right_neutral mod_le_divisor plus_1_eq_Suc subsetD trans_less_add2)
-    hence "rho (t+(k+k+k-1)) q = Active sq" using som k2 sq by (smt (z3) One_nat_def Suc_1 Suc_lessD Suc_pred' add_Suc_right diff_Suc_1 group_cancel.add1)
-    hence "x sq mod k = (k+k+k-1) mod k" using monovalent_stable[of V t 0 "k+k+k-1"] assms `q : V` k2 by auto
-    hence "k_mod.minMsgs msgp mod k = k - 1" using sq som `q : V` `x sq = k_mod.minMsgs msgp`
-      by (smt (verit, ccfv_threshold) add.assoc add_diff_cancel_left' add_leD1 assms(1) diff_is_0_eq' le_add1 mod_Suc mod_add_self2
-      mod_mod_trivial not_less_eq_eq ordered_cancel_comm_monoid_diff_class.add_diff_inverse plus_1_eq_Suc)
-    moreover have cont:"ALL p. msgp p ~= Void --> msgp p = Content (som (k+k+k-1) p)"
-    proof (rule+)
-      fix qq
-      assume "msgp qq ~= Void"
-      hence "qq : HO (t+k+k+k) p" using assms(2) unfolding HOrcvdMsgs_def msgp_def by auto
-      moreover have "Suc (t+(k+k+k-1)) = t+k+k+k" using k2 by fastforce
-      moreover have "t+(k+k+k-1) = t+k+k+k-1" using k2 by fastforce
-      moreover have "rho (t + (k + k + k - 1)) qq = Active (som (k + k + k - 1) qq)" using som k2
-        by (metis `p \<in> V` add_Suc_right assms(2) calculation(1) calculation(2) subsetD)
-      ultimately show "msgp qq = Content (som (k+k+k-1) qq)" using som sending[of "t+(k+k+k-1)" qq "som (k+k+k-1) qq"]
+      moreover have "Suc (t+(k+k-1)) = t+k+k" using k2 by fastforce
+      moreover have "t+(k+k-1) = t+k+k-1" using k2 by fastforce
+      moreover have "rho (t + (k + k - 1)) qq = Active (som (k + k - 1) qq)" using som k2
+        by metis
+      ultimately show "msgp qq = Content (som (k+k-1) qq)" using som sending[of "t+(k+k-1)" qq "som (k+k-1) qq"]
         assms(2) unfolding msgp_def by auto
     qed 
-    have "ALL p : V. x (som (k+k+k-1) p) mod k = k_mod.minMsgs msgp mod k"
-      using `k_mod.minMsgs msgp mod k = k - 1` monovalent_stable[of V t 0 "k+k+k-1"] assms
-      by (smt (verit, best) Nat.add_diff_assoc add.commute add.right_neutral add_diff_inverse_nat diff_is_0_eq'
-      le_add1 less_imp_Suc_add mod_0 mod_add_left_eq mod_add_self2 nat_le_linear plus_1_eq_Suc proc_state.inject som zero_less_diff)
-    hence "k_mod.isSynch k msgp" using `q : V` som `ALL p : V. conc (som (k - 1 + k) p)` cont unfolding k_mod.isSynch_def
-      by (smt (z3) HOrcvdMsgs_def Suc_diff_1 msgp `p : V` ab_semigroup_add_class.add_ac(1)
-      add_gr_0 assms(2) conc_forever dual_order.strict_trans k2 le_add1 le_add_diff less_2_cases_iff plus_1_eq_Suc subsetD)
-    moreover have "ALL h. msgp h ~= Void --> h : V" using cont assms(2) unfolding msgp_def HOrcvdMsgs_def
-      by (metis `p \<in> V` ab_semigroup_add_class.add_ac(1) subsetD)
-    have "k+k-1+k = k+k+k-1" by fastforce
-    hence "k_mod.isReady msgp" using ready_forever cont `ALL h. msgp h ~= Void --> h : V`
+    have "ALL p. x (som (k+k-1) p) mod k = k_mod.minMsgs msgp mod k"
+      using `k_mod.minMsgs msgp mod k = k - 1` k_k_k_1
+      by (metis `x sq = k_mod.minMsgs msgp` `x sq mod k = (k + k - 1) mod k` proc_state.inject som)
+    hence "k_mod.isSynch k msgp" using som cont unfolding k_mod.isSynch_def by (meson conc_forever zero_le)
+    moreover have "k-1+k = k+k-1" by fastforce
+    hence "k_mod.isReady msgp" using ready_forever cont
       unfolding k_mod.isReady_def by (metis message.distinct(3) message.inject)
-    ultimately have "level (som (k+k+k-1) p) = 1 --> k_mod.goto_level2 k msgp (som (k+k+k-1) p)" unfolding k_mod.goto_level2_def by auto
-    moreover have "k_mod.gen_nextState k p (som (k+k+k-1) p) msgp (som (k+k+k) p)"
-      using transition[of "t+(k+k+k-1)" p "som (k+k+k-1) p" "som (k+k+k) p"] `p : V` som k2
+    ultimately have "level (som (k+k-1) p) = 1 --> k_mod.goto_level2 k msgp (som (k+k-1) p)" unfolding k_mod.goto_level2_def by auto
+    moreover have "k_mod.gen_nextState k p (som (k+k-1) p) msgp (som (k+k) p)"
+      using transition[of "t+(k+k-1)" p "som (k+k-1) p" "som (k+k) p"] som k2
       by (smt (z3) Suc_diff_1 msgp ab_semigroup_add_class.add_ac(1) add_Suc_right diff_Suc_1 dual_order.strict_trans less_2_cases_iff)
-    moreover have "level (som (k+k+k-1) p) > 0" using ready_forever ready_level[of "k+k+k-1" p "som (k+k+k-1) p"]
-      `p : V` `k+k-1+k = k+k+k-1` som by (metis execution.ready_level execution_axioms)
-    ultimately have "level (som (k+k+k) p) >= 2" using `k_mod.minMsgs msgp mod k = k - 1` unfolding k_mod.gen_nextState_def
+    moreover have "level (som (k+k-1) p) > 0" using ready_forever ready_level[of "k+k-1" p "som (k+k-1) p"]
+      `k-1+k = k+k-1` som by (metis execution.ready_level execution_axioms)
+    ultimately have "level (som (k+k) p) >= 2" using `k_mod.minMsgs msgp mod k = k - 1` unfolding k_mod.gen_nextState_def
       by (metis (no_types, lifting) One_nat_def k_mod.goto_level1_def less_2_cases_iff less_numeral_extra(3) nat_le_linear not_le_imp_less)
-    thus "level (som (k+k+k) p) = 2" using A2_bis[of "t+(k+k+k)" p "som (k+k+k) p"] som `p : V` le_antisym by presburger
+    thus "level (som (k+k) p) = 2" using A2_bis[of "t+(k+k)" p "som (k+k) p"] som le_antisym by presburger
   qed
-  thus ?thesis by (simp add: som add.commute numeral_3_eq_3)
+  thus ?thesis by (simp add: som add.commute numeral_2_eq_2)
 qed
     
-definition zmax where
-"zmax p = Max ((ref_lvup p) ` {t. rho t p ~= Asleep})"
-
 lemma zset_in_L: "(ref_lvup p) ` {t. rho t p ~= Asleep} <= L"
 proof
   fix zz
@@ -1044,141 +1070,17 @@ proof
   thus "zz : L" using in_L[of t p] by (cases "rho t p") auto
 qed
 
-lemma zmax_in_L: "zmax p : L"
-proof -
-  have "(ref_lvup p) ` {t. rho t p ~= Asleep} ~= {}" (is "?set ~= _") using complete by auto
-  thus ?thesis using zset_in_L finite_L Max_in[of ?set] finite_subset unfolding zmax_def by blast
-qed
-
 lemma zset_non_empty: "(ref_lvup p) ` {t. rho t p ~= Asleep} ~= {}"
-using complete by simp
-
-lemma zmax_lim:
-assumes "ref_lvup p t = zmax p"
-and "rho t p ~= Asleep"
-shows "ref_lvup p (t+i) = zmax p"
-proof (induction i)
-  case 0
-  show ?case using assms by auto
-next
-  case (Suc ii)
-  let ?set = "(ref_lvup p) ` {t. rho t p ~= Asleep}"
-  obtain ssp where "rho (t+Suc ii) p = Active ssp"  using nonAsleepAgain[of rho t p] assms(2) run unfolding HORun_def by fastforce
-  moreover obtain sp where "rho (t+ii) p = Active sp" using nonAsleepAgain assms(2) run unfolding HORun_def by fastforce
-  ultimately have "ref_lvup p (t+Suc ii) >= zmax p" using Suc.IH loop growing_L[of "t+ii" p sp p ssp] unfolding zmax_def by auto
-  moreover have "ref_lvup p (t+Suc ii) : ?set" using `rho (t+Suc ii) p = Active ssp` by auto
-  ultimately show ?case using Max_ge[of ?set "ref_lvup p (t+Suc ii)"] zset_in_L finite_subset[of ?set L]
-    finite_L unfolding zmax_def by (metis le_less not_le)
-qed
-
-definition stab where
-"stab = (SOME t. ALL p. rho t p ~= Asleep & ref_lvup p t = zmax p)"
-
-lemma stab_exists: "ALL p. rho stab p ~= Asleep & ref_lvup p stab = zmax p"
-proof -
-  let ?set = "%p. (ref_lvup p) ` {t. rho t p ~= Asleep}"
-  define pmax where "pmax = (%p. SOME t. rho t p ~= Asleep & ref_lvup p t = zmax p)" (is "_ = (%p. SOME t. ?P p t)")
-  have "ALL p. Max (?set p) : ?set p" using Max_in[of "?set _"] finite_L zset_in_L finite_subset zset_non_empty by metis
-  hence "ALL p. EX t. ?P p t" unfolding zmax_def by fastforce
-  hence Ppmax:"ALL p. ?P p (pmax p)" using someI_ex[of "?P _"] unfolding pmax_def by auto
-  define pMax where "pMax = Max (range pmax)"
-  have "ALL p. pMax >= pmax p" using Max_ge unfolding pMax_def by auto
-  hence "ALL p. ?P p pMax" using nonAsleepAgain[of rho "pmax _" _ _ HO _ "pMax - pmax _"] zmax_lim[of _ "pmax _"]
-    by (smt (verit, best) HORun_def Ppmax add.commute le_add_diff_inverse2 proc_state.simps(3) run)
-  thus ?thesis using someI_ex[of "%t. ALL p. ?P p t"] unfolding stab_def by auto
-qed
-
-definition zmin where
-"zmin = (LEAST zz. EX p. zmax p = zz)"
-definition Vmin where
-"Vmin = {p. zmax p = zmin}"
-
-lemma Vmin_non_empty: "EX p : Vmin. True"
-proof -
-  have "EX p. zmax p = zmin" using LeastI_ex unfolding zmin_def by (smt (z3))
-  thus ?thesis unfolding Vmin_def by auto
-qed
-
-lemma Vmin_insulated: "ALL p : Vmin. ALL i > stab. HO (Suc i) p <= Vmin"
-proof 
-  fix p
-  assume "p : Vmin"
-  show "ALL i > stab. HO (Suc i) p <= Vmin"
-  proof (rule allI impI subsetI)+
-    fix i x
-    assume "i > stab" and "x : HO (Suc i) p"
-    obtain sp where sp:"rho i p = Active sp"
-      using stab_exists nonAsleepAgain[of rho stab p _ HO _ "i - stab"] `i > stab` run unfolding HORun_def by fastforce
-    obtain sx where sx:"rho (i-1) x = Active sx"
-      using stab_exists nonAsleepAgain[of rho stab x _ HO _ "i - 1 - stab"] `i > stab` run unfolding HORun_def by fastforce
-    have "ref_lvup x (i-1) <= ref_lvup p i"
-      using growing_L[of "i-1" x sx p sp] sx sp `x : HO (Suc i) p` `stab < i` by auto
-    hence "zmax x = zmin" using `p : Vmin` stab_exists zmax_lim[of p stab "i - stab"] `i > stab` 
-      Least_le[of "%zz. EX p. zmax p = zz" "zmax x"] 
-      zmax_lim[of x stab "i - 1 - stab"] `i > stab` unfolding Vmin_def zmin_def by fastforce
-    thus "x : Vmin" unfolding Vmin_def by auto
-  qed
-qed
-
-lemma Vmin_monovalent: "ALL p : Vmin. EX sp. rho (Suc (Suc stab)) p = Active sp & x sp mod k = (Suc (Suc stab) - snd zmin) mod k"
-proof 
-  fix p
-  assume "p : Vmin"
-  define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (Suc stab)) p) (rho (Suc stab))"
-  obtain sp where sp:"rho (Suc stab) p = Active sp"
-    using stab_exists nonAsleepAgain[of rho stab p _ HO _ 1] run unfolding HORun_def by fastforce
-  moreover from this obtain ssp where ssp:"rho (Suc (Suc stab)) p = Active ssp" using nonAsleepAgain[of rho "Suc stab" p _ HO _ 1]
-    run unfolding HORun_def by fastforce
-  ultimately have "k_mod.gen_nextState k p sp msgp ssp" using transition unfolding msgp_def by auto
-  hence equivmod:"Suc (k_mod.minMsgs msgp) mod k = x ssp mod k" unfolding k_mod.gen_nextState_def
-    by (metis Suc_diff_1 bits_mod_0 k2 k_mod.goto_level1_def k_mod.goto_level2_def less_imp_Suc_add mod_Suc zero_less_Suc)
-  have "Suc stab - k_mod.minMsgs msgp = snd (ref_lvup p (Suc stab))" using `p : Vmin` unfolding ref_lvup_def msgp_def by (meson eq_snd_iff)
-  hence "Suc stab - k_mod.minMsgs msgp = snd zmin" using stab_exists zmax_lim[of p stab 1] `p : Vmin` unfolding Vmin_def by auto
-  moreover obtain h sh where "rho (Suc stab) h = Active sh" and "x sh = k_mod.minMsgs msgp" 
-    using adopt_incoming[of "Suc stab" p sp msgp] sp msgp_def by auto
-  hence "k_mod.minMsgs msgp <= Suc stab" using A2_bis[of "Suc stab" h sh] by auto
-  ultimately have "Suc stab - snd zmin = k_mod.minMsgs msgp" by (metis diff_diff_cancel)
-  hence "x ssp mod k = (Suc (Suc stab) - snd zmin) mod k" using equivmod
-    by (metis Suc_diff_le `Suc stab - k_mod.minMsgs msgp = snd zmin` diff_le_self)
-  thus "EX sp. rho (Suc (Suc stab)) p = Active sp & x sp mod k = (Suc (Suc stab) - snd zmin) mod k"
-    using ssp by auto
-qed
-
-lemma Vmin_fired:"fst zmin = 2"
-proof -
-  define t where "t = Suc (Suc stab) + (k - (Suc (Suc stab) - snd zmin) mod k)"
-  have "(Suc (Suc stab) - snd zmin + (k - (Suc (Suc stab) - snd zmin) mod k)) mod k = 0"
-    by (smt (z3) add.commute dual_order.strict_trans k2 le_add_diff_inverse2 less_2_cases_iff mod_add_right_eq mod_le_divisor mod_self)
-  hence "ALL p : Vmin. EX sp. rho t p = Active sp & x sp mod k = 0"
-    using monovalent_stable[of Vmin "Suc (Suc stab)" "Suc (Suc stab) - snd zmin" "k - (Suc (Suc stab) - snd zmin) mod k"]
-    Vmin_monovalent Vmin_insulated unfolding t_def by auto
-  moreover have "t >= stab" unfolding t_def by linarith
-  ultimately have "ALL p : Vmin. ALL sp. rho (t+3*k) p = Active sp --> level sp = 2"
-    using monovalent_termine[of Vmin t] Vmin_insulated unfolding t_def by auto
-  from this obtain p sp where "p : Vmin" and sp:"rho (t+3*k) p = Active sp" and "level sp = 2"
-    using Vmin_non_empty `t >= stab` nonAsleepAgain[of rho stab _ _ HO _ "t+3*k-stab"] run stab_exists unfolding HORun_def by fastforce
-  hence "forc sp >= 3" using level_force[of "t+3*k" p sp] by auto
-  define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t+3*k)) p) (rho (t+3*k))"
-  obtain h sh ttt where "rho ttt h = Active sh" and "level sh = k_mod.maxForce msgp - 1"
-    using A5[of "t+3*k" p sp] sp msgp_def by blast
-  hence "k_mod.maxForce msgp <= 3" using A2_bis[of ttt h sh] by auto
-  moreover have "msgp p = Content sp" using sending[of "t+3*k" p sp] sp loop unfolding msgp_def by auto
-  ultimately have "k_mod.maxForce msgp = 3" using `forc sp >= 3` finite_UNIV Max_ge[of "k_mod.forceMsgs ` (range msgp)" "forc sp"]
-    unfolding k_mod.maxForce_def by (metis finite_imageI image_eqI k_mod.forceMsgs.simps(1) le_antisym order_trans rangeI)
-  hence "fst (ref_lvup p (t+3*k)) = 2" unfolding ref_lvup_def msgp_def by auto
-  thus ?thesis using `p : Vmin` zmax_lim[of p stab] stab_exists `t >= stab` unfolding Vmin_def
-    by (smt (verit, ccfv_threshold) add.commute add.left_commute less_eqE mem_Collect_eq)
-qed
+using complete by auto
 
 lemma A4:
 assumes sp:"rho (t+i) p = Active sp"
 and ssp:"rho (t+Suc i) p = Active ssp"
-and "level sp = 1"
-and "level ssp = 2"
+and "level sp < level ssp"
 and s:"rho t xi = Active s"
 and ss:"rho (Suc t) xi = Active ss"
 and "level s = 0"
-and "level ss = 1"
+and "level ss > 0"
 shows "i mod k = 0"
 proof (rule ccontr)
   assume "~ i mod k = 0"
@@ -1201,7 +1103,7 @@ proof (rule ccontr)
   hence "j-Suc c mod k ~= 0"
     using `j mod k ~= 0` by (smt (z3) One_nat_def Suc_1 add_diff_inverse_nat diff_Suc_1 diff_zero k2 less_nat_zero_code mod_Suc mod_by_Suc_0 mod_if)
 
-  have "i >= k" using assms A3[of t s ss i p sp ssp] by (metis Suc_1 `i mod k ~= 0` bits_mod_0 lessI neq0_conv)
+  have "i >= k" using assms A3[of t s ss i p sp ssp] by (metis `i mod k ~= 0` bits_mod_0 neq0_conv)
   have "j >= k" using assms sq ssq levsq A3[of t s ss j q sq ssq] by (metis `j mod k ~= 0` bits_mod_0 neq0_conv)
 
 
@@ -1319,87 +1221,821 @@ proof -
   thus ?thesis unfolding k_mod.safety_def by auto
 qed
 
-lemma all_level2: "ALL p. fst (zmax p) = 2 & snd (zmax p) > 0"
-proof 
-  fix p
-  have "fst (zmax p) >= 2" using Vmin_fired Least_le unfolding Vmin_def zmin_def by (metis (mono_tags) less_prod_def not_le)
-  obtain sp where sp:"rho stab p = Active sp" using stab_exists by (cases "rho stab p") auto
-  define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc stab) p) (rho stab)"
-  have "k_mod.maxForce msgp >= 3" using `fst (zmax p) >= 2` stab_exists unfolding ref_lvup_def msgp_def
-    by (metis One_nat_def Suc_1 diff_Suc_1 diff_le_mono not_less_eq_eq numeral_3_eq_3 prod.sel(1))
-  from this obtain h sh ssh where "rho (Suc stab - Suc (k_mod.minMsgs msgp)) h = Active sh" and "level sh = k_mod.maxForce msgp - 1"
-    and "rho (stab - Suc (k_mod.minMsgs msgp)) h = Active ssh" and "level ssh = k_mod.maxForce msgp - 2"
-    using A5[of stab p sp] sp msgp_def by (metis numeral_le_one_iff semiring_norm(70))
-  moreover from this have "k_mod.maxForce msgp = 3" using A2_bis[of _ h sh] `k_mod.maxForce msgp >= 3`
-    by (metis Suc_1 add_2_eq_Suc' eval_nat_numeral(3) le_antisym le_diff_conv one_plus_numeral_commute)
-  ultimately have "stab > k_mod.minMsgs msgp"
-    using Suc_1 diff_Suc_1 diff_Suc_Suc diff_is_0_eq' not_le by fastforce
-  show "fst (zmax p) = 2 & snd (zmax p) > 0" using stab_exists `k_mod.maxForce msgp = 3` unfolding ref_lvup_def
-    by (metis One_nat_def Suc_1 `k_mod.minMsgs msgp < stab` diff_Suc_1 fst_conv msgp_def numeral_3_eq_3 snd_conv zero_less_diff)
+lemma mod_sub: assumes "a >= c"
+shows  "(a - c) mod k = (a - c mod k) mod k" using assms
+proof -
+  obtain q where decomp:"c = q * k + (c mod k)" using div_mod_decomp by blast
+  hence "(a - c) mod k = (a - q * k - (c mod k)) mod k" using assms by auto
+  thus ?thesis by (metis decomp add_le_imp_le_diff assms diff_commute le_add_diff_inverse mod_mult_self4 mult.commute)
 qed
 
-lemma all_monovalent: "EX c. ALL p. EX s. rho (Suc stab) p = Active s & x s mod k = c mod k"
+lemma ref_inf_t: assumes "rho t p = Active sp"
+shows "t >= snd (ref_lvup p t)"
 proof -
-  obtain c where "ALL t p sp ssp. rho t p = Active sp --> level sp < 2 --> rho (Suc t) p = Active ssp --> level ssp = 2 --> t mod k = c"
-    using safety star loop run k2 unfolding k_mod.safety_def by fastforce
-  hence "ALL t p. levup 2 (Suc t) p --> t mod k = c" unfolding levup_def by (metis Suc_1 Zero_not_Suc diff_Suc_1 lessI)
-  have "ALL p. EX s. rho (Suc stab) p = Active s & x s mod k = (stab + (k - c mod k)) mod k"
-  proof
-    fix p
-    obtain sp where sp:"rho stab p = Active sp" using stab_exists by (cases "rho stab p") auto
-    from this obtain ssp where ssp:"rho (Suc stab) p = Active ssp"
-      using nonAsleepAgain[of rho stab p _ HO _ 1] run k2 unfolding HORun_def by fastforce
-    define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc stab) p) (rho stab)"
-    hence zmax:"stab - k_mod.minMsgs msgp = snd (zmax p)" using stab_exists snd_conv unfolding ref_lvup_def by metis
-    moreover have "k_mod.maxForce msgp = 3" using all_level2 stab_exists unfolding ref_lvup_def msgp_def
-      by (smt (z3) One_nat_def Suc_1 diff_le_self fst_conv le_add1 le_add_diff_inverse le_trans numeral_3_eq_3 plus_1_eq_Suc)
-    moreover have "EX q. levup (fst (ref_lvup p stab)) (snd (ref_lvup p stab)) q"
-      using in_L[of stab p sp] sp unfolding L_def by fastforce
-    ultimately have "EX q. levup 2 (stab - k_mod.minMsgs msgp) q" using stab_exists unfolding ref_lvup_def msgp_def by auto
-    hence "(stab - k_mod.minMsgs msgp - 1) mod k = c"
-      using zmax all_level2 `ALL t p. levup 2 (Suc t) p --> t mod k = c` by auto
-    hence "(stab - k_mod.minMsgs msgp) mod k = (Suc c) mod k"
-      using zmax all_level2
-      by (metis Suc_diff_1 mod_Suc_eq)
-    moreover have "k_mod.gen_nextState k p sp msgp ssp" using sp ssp transition unfolding msgp_def by auto
-    hence e2:"x ssp mod k = Suc (k_mod.minMsgs msgp) mod k" unfolding k_mod.gen_nextState_def
-      by (metis One_nat_def Suc_diff_1 `k_mod.maxForce msgp = 3` k2 k_mod.goto_level2_def lessI less_iff_Suc_add mod_Suc mod_less numeral_3_eq_3 zero_less_Suc)
-    ultimately have "(stab - k_mod.minMsgs msgp + Suc (k_mod.minMsgs msgp)) mod k = (Suc c + x ssp) mod k"
-      using mod_add_eq by metis
-    hence "stab mod k = (c + x ssp) mod k"
-      by (metis Suc_eq_plus1 `(stab - k_mod.minMsgs msgp - 1) mod k = c` zmax e2 add.commute all_level2 diff_diff_left diff_is_0_eq'
-      le_add_diff_inverse mod_add_right_eq not_less_eq not_less_eq_eq zero_less_Suc)
-    hence "(c + x ssp + (k - c mod k)) mod k = (stab + (k - c mod k)) mod k"
-      using mod_add_right_eq[of "x ssp" "k-c mod k" k] mod_add_eq by metis
-    hence "x ssp mod k = (stab + (k - c mod k)) mod k"
-      by (smt (z3) `(stab - k_mod.minMsgs msgp - 1) mod k = c` add.commute add.left_commute dual_order.strict_trans
-      k2 le_add_diff_inverse2 less_2_cases_iff mod_add_self2 mod_le_divisor mod_less mod_less_divisor)
-    thus "EX s. rho (Suc stab) p = Active s & x s mod k = (stab + (k - c mod k)) mod k" using ssp by auto
-  qed
-  thus  "EX c. ALL p. EX s. rho (Suc stab) p = Active s & x s mod k = c mod k" by auto
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc t) p) (rho t)"
+  obtain q sq where "msg q = Content sq" and "rho t q = Active sq" and "k_mod.maxForce msg = forc sq"
+    using adopt_incoming[of t p sp msg] assms unfolding k_mod.minMsgs_def msg_def by auto
+  hence "t >= k_mod.minMsgs msg"
+    using Least_le[of "%v. EX m p. msg p = Content m & forc m = k_mod.maxForce msg & x m = v" "x sq"] 
+    A2_bis[of t q sq] assms `rho t q = Active sq` unfolding k_mod.minMsgs_def by fastforce
+  thus ?thesis unfolding ref_lvup_def by (metis diff_le_self snd_conv)
 qed
 
-lemma liveness: "k_mod.liveness rho"
+lemma minMsgs_inf:
+assumes "rho t p ~= Asleep"
+shows "k_mod.minMsgs (HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+1) p) (rho t)) <= t"
 proof -
-  obtain c where c:"ALL p. EX s. rho (Suc stab) p = Active s & x s mod k = c mod k"
-    using all_monovalent by auto
-  define t where "t = Suc stab + (k - c mod k)"
-  have "ALL p. EX s. rho t p = Active s & x s mod k = (c + (k - c mod k)) mod k"
-    using monovalent_stable[of UNIV "Suc stab" c "k-c mod k"] c unfolding t_def by auto
-  hence "ALL p. EX s. rho t p = Active s & x s mod k = 0"
-    by (metis add_diff_inverse_nat k2 less_imp_Suc_add mod_add_left_eq mod_le_divisor mod_self not_le zero_less_Suc)
-  hence "ALL p. ALL sp. rho (t+3*k) p = Active sp --> level sp = 2"
-    using monovalent_termine[of UNIV t] by auto
-  moreover have "ALL p. EX s. rho (t+3*k) p = Active s"
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (t+1) p) (rho t)"
+  obtain sp where sp:"rho t p = Active sp" using assms by (cases "rho t p") auto
+  obtain q sq where "rho t q = Active sq" and "x sq = k_mod.minMsgs msg"
+    using adopt_incoming[of t p sp] sp unfolding msg_def by auto
+  thus ?thesis using A2_bis[of t q sq] unfolding msg_def by auto
+qed
+
+lemma ref_cong_x: assumes "rho t p ~= Asleep"
+and "rho (Suc t) p = Active sp"
+shows "x sp mod k = Suc (t - snd (ref_lvup p t)) mod k"
+proof -
+  obtain ssp where ssp:"rho t p = Active ssp" using assms(1) by (cases "rho t p") auto
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc t) p) (rho t)"
+  have "k_mod.gen_nextState k p ssp msg sp" using transition run ssp assms(2) unfolding msg_def by auto
+  hence "x sp mod k = Suc (k_mod.minMsgs msg) mod k" unfolding k_mod.gen_nextState_def k_mod.goto_level1_def k_mod.goto_level2_def
+    by (smt (z3) One_nat_def Suc_1 Suc_diff_1 Suc_lessD k2 mod_Suc mod_less)
+  thus ?thesis using snd_conv minMsgs_inf unfolding k_mod.gen_nextState_def ref_lvup_def by (metis Suc_eq_plus1 assms(1) diff_diff_cancel msg_def)
+qed
+
+
+lemma xi_lev1:
+assumes "ALL p. rho t p ~= Asleep"
+and "t > 0"
+and "ref_lvup xi t = ref_lvup xi (t+3*k)"
+shows "EX s. rho (t+3*k) xi = Active s & level s > 0"
+proof -
+  obtain s where s:"rho t xi = Active s" using nonAsleepAgain2[of "t-1" xi 1] assms by (cases "rho t xi") auto
+  have same_ref:"ALL i <= 3*k. ref_lvup xi (t+i) = ref_lvup xi t"
+  proof (rule ccontr)
+    assume "~ (ALL i <= 3*k. ref_lvup xi (t+i) = ref_lvup xi t)"
+    then obtain ii where "ii <= 3*k" and differ:"~ (ref_lvup xi (t+ii) = ref_lvup xi t)" by blast
+    let "?active_path" =
+      "% seq t D. seq 0 = xi & seq D = xi & (ALL i < D. rho (Suc t+i) (seq (Suc i)) ~= Asleep & seq i : HO (Suc t+Suc i) (seq (Suc i)))"
+    have "?active_path (%_. xi) t ii"
+      using loop nonAsleepAgain2 s by (metis add_Suc_shift proc_state.simps(3)) 
+    hence "active_path xi xi (Suc t) ii" unfolding active_path_def by auto
+    hence "ref_lvup xi t <= ref_lvup xi (t+ii)"
+      using growing_path s nonAsleepAgain2 by auto
+    moreover have "?active_path (%_. xi) (t+ii) (3*k - ii)"
+      using loop s nonAsleepAgain2 by (metis add_Suc_shift proc_state.simps(3)) 
+    hence "active_path xi xi (Suc t+ii) (3*k - ii)" unfolding active_path_def by auto
+    hence "ref_lvup xi (t+ii) <= ref_lvup xi (t+3*k)"
+      using growing_path[of _ _ "t+ii" "3*k-ii"] `ii <= 3*k` s nonAsleepAgain2[of t xi ii] by auto
+    ultimately show "False"
+      using differ assms(3) by auto
+  qed
+  obtain sxi where sxi:"ALL i. rho (t+i) xi = Active (sxi i)"
+    using s nonAsleepAgain2[of t] by (meson assms(1))
+  (*define c where "c = ((k-1) * t + x (sxi 0))"*)
+  define c where "c = Suc k - (snd(ref_lvup xi t)) mod k"
+  have suite:"ALL i <= 3*k. x (sxi (Suc i)) mod k = (t + i + c) mod k"
+  proof (rule+)
+    fix i
+    assume "i <= 3*k"
+    define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) xi (HO (t+Suc i) xi) (rho (t+i))"
+    have "(t + i - k_mod.minMsgs msg) mod k = snd (ref_lvup xi (t+i)) mod k"
+      using assms(2) unfolding ref_lvup_def msg_def by (metis add_Suc_right snd_conv)
+    hence "(k_mod.minMsgs msg + snd (ref_lvup xi (t+i))) mod k = (t + i) mod k"
+      using minMsgs_inf[of "t+i" xi] nonAsleepAgain2[of t xi i] assms
+      by (smt (z3) One_nat_def add.commute add.right_neutral add_Suc_right le_add_diff_inverse2 mod_add_cong msg_def proc_state.simps(3))
+    hence "k_mod.minMsgs msg mod k = (t + i - snd (ref_lvup xi (t+i))) mod k"
+      using ref_inf_t[of "t+i" xi "sxi i"] sxi
+      by (smt (z3) add.commute add.right_neutral add_Suc_right diff_add_inverse2 diff_is_0_eq'
+      execution.ref_lvup_def execution_axioms le_add_diff_inverse2 msg_def nat_le_linear snd_conv)
+    moreover have "k_mod.gen_nextState k xi (sxi i) msg (sxi (Suc i))"
+      using transition[of "t+i" xi "sxi i" "sxi (Suc i)"] sxi `t > 0` unfolding msg_def
+      by (smt (verit, ccfv_threshold) Nat.add_diff_assoc2 One_nat_def Suc_leI Suc_pred' add.commute add_Suc_right)
+    hence "x (sxi (Suc i)) mod k = Suc (k_mod.minMsgs msg) mod k"
+      unfolding k_mod.gen_nextState_def k_mod.goto_level1_def k_mod.goto_level2_def
+      by (smt (z3) One_nat_def Suc_1 Suc_diff_1 Suc_lessD k2 mod_Suc mod_less)
+    ultimately have "x (sxi (Suc i)) mod k = Suc (t + i - snd (ref_lvup xi (t+i))) mod k"
+      by (metis mod_Suc_eq)
+
+
+    hence "x (sxi (Suc i)) mod k = (t + i + Suc k - snd (ref_lvup xi t)) mod k"
+      using same_ref `i <= 3*k` ref_inf_t[of t xi "sxi 0"] sxi
+      by (smt (z3) Nat.add_diff_assoc2 add.assoc add.commute add.right_neutral add_Suc_shift mod_add_self1)
+    hence "x (sxi (Suc i)) mod k = (t + i + Suc k - snd (ref_lvup xi t) mod k) mod k"
+      using ref_inf_t[of t xi "sxi 0"] sxi mod_sub[of "snd (ref_lvup xi t)" "t + i + Suc k"]
+      by (metis `i <= 3 * k` ref_inf_t same_ref trans_le_add1)
+    thus "x (sxi (Suc i)) mod k = (t + i + c) mod k"
+      unfolding c_def 
+      by (metis Nat.add_diff_assoc dual_order.strict_trans k2 le_add2 le_trans less_2_cases_iff mod_le_divisor plus_1_eq_Suc)
+  qed
+    
+  define tt where "tt = (if (t+c) mod k = 0 then 0 else k - (t+c) mod k)"
+  have xi0:"x (sxi (Suc tt)) mod k = 0"
+  proof (cases "(t+c) mod k = 0")
+    case False
+    thus "x (sxi (Suc tt)) mod k = 0" using suite unfolding tt_def
+      by (smt (verit, del_insts) add.assoc add.commute k2 le_add1 le_add_diff_inverse less_iff_Suc_add
+      mod_add_right_eq mod_le_divisor mod_self mult_Suc numeral_3_eq_3 zero_less_Suc)
+  next
+    case True
+    thus "x (sxi (Suc tt)) mod k = 0" using suite unfolding tt_def by simp
+  qed
+  have "ALL p. active_path xi p (Suc (t + tt)) k"
   proof
     fix p
-    show "EX s. rho (t+3*k) p = Active s"
-      using stab_exists nonAsleepAgain[of rho stab p _ HO _ "t+3*k-stab"] run unfolding t_def HORun_def
-      by (smt (z3) add_Suc_shift le_add1 le_add_diff_inverse le_trans t_def)
+    obtain seq where "seq 0 = xi & seq k = p & (ALL i < k. seq i : HO (Suc (t + tt) + Suc i) (seq (Suc i)))"
+      using star unfolding k_mod.path_def by presburger
+    thus "active_path xi p (Suc (t + tt)) k"
+      using assms(1) nonAsleepAgain2 unfolding active_path_def by (metis add.left_commute plus_1_eq_Suc proc_state.simps(3))
   qed
-  ultimately show "k_mod.liveness rho"
-    unfolding k_mod.liveness_def by meson
+  hence all_larger:"ALL p. ref_lvup p (t+tt+k) >= ref_lvup xi (t+tt)"
+    using growing_path[of xi _ "t+tt" k] assms(1) nonAsleepAgain2[of t xi tt] by auto
+  
+  define cong_xi where "cong_xi = (%i. {p. ref_lvup p (t+tt+k+i) = ref_lvup xi t})"
+  have vue_incluse:"ALL i < k. Union ((HO (t+tt+k+Suc (Suc i))) ` cong_xi (Suc i)) <= cong_xi i"
+  proof 
+    fix i
+    show  "i < k --> Union ((HO (t+tt+k+Suc (Suc i))) ` cong_xi (Suc i)) <= cong_xi i"
+    proof 
+      assume "i < k"
+      show  "Union ((HO (t+tt+k+Suc (Suc i))) ` cong_xi (Suc i)) <= cong_xi i"
+      proof
+        fix p
+        assume "p : Union ((HO (t+tt+k+Suc (Suc i))) ` cong_xi (Suc i))"
+        then obtain q where q_cong_xi:"q : cong_xi (Suc i)" and lien:"p : HO (t+tt+k+Suc (Suc i)) q" by auto
+        have "rho (t+tt+k+Suc i) q ~= Asleep" using nonAsleepAgain2[of t q "tt+k+Suc i"] assms(1) by (metis add.commute add.left_commute proc_state.simps(3))
+        hence "active_path p q (t+tt+k+Suc i) 1"
+          using exI[of "%seq. seq 0 = p & seq 1 = q & _" "%w. if w = 0 then p else q"]
+          unfolding active_path_def
+          by (smt (verit, ccfv_threshold) lien add.left_commute add.right_neutral less_one plus_1_eq_Suc zero_neq_one)
+        moreover have "rho (t + tt + k + i) p ~= Asleep"
+          using nonAsleepAgain2[of t p "tt+k+i"] assms(1)
+          by (metis add.assoc proc_state.simps(3))
+        ultimately have "ref_lvup p (t+tt+k+i) <= ref_lvup q (t+tt+k+i+1)"
+          using growing_path[of p q "t+tt+k+i" 1] k2 by simp
+        hence "ref_lvup p (t+tt+k+i) <= ref_lvup xi t" using q_cong_xi unfolding cong_xi_def by auto
+        moreover have "ALL i. rho (Suc t + tt + k + i) p ~= Asleep"
+          using nonAsleepAgain2[of t p] assms(1) by (metis add.commute add.left_commute plus_1_eq_Suc proc_state.simps(3))
+        hence "active_path p p (Suc t+tt+k) i"
+          using loop exI[of "%seq. seq 0 = p & seq i = p & _" "%_.p"] unfolding active_path_def by auto
+        hence ref_grow:"ref_lvup p (t+tt+k+i) >= ref_lvup p (t+tt+k)"
+          using growing_path[of p p "t+tt+k" i] nonAsleepAgain2[of t p "tt+k"] assms(1) k2
+          by (metis add.assoc plus_1_eq_Suc proc_state.simps(3))
+        have "ref_lvup p (t+tt+k+i) >= ref_lvup xi t"
+        proof (cases "(t+c) mod k = 0")
+          case False
+          thus "ref_lvup p (t+tt+k+i) >= ref_lvup xi t"
+            using all_larger same_ref ref_grow unfolding tt_def
+            by (smt (z3) diff_le_self dual_order.strict_trans1 le_add1 mult_Suc not_le numeral_3_eq_3)
+        next
+          case True
+
+          thus "ref_lvup p (t+tt+k+i) >= ref_lvup xi t"
+            using all_larger same_ref ref_grow unfolding tt_def
+            by (smt (z3) add.right_neutral dual_order.strict_trans1 not_le)
+        qed
+        ultimately show "p : cong_xi i" unfolding cong_xi_def by auto
+      qed
+    qed
+  qed
+
+  have monoval:"ALL i <= k. ALL sp. ALL p : cong_xi i. rho (Suc t+tt+k+i) p = Active sp --> conc sp & x sp mod k = i mod k"
+  proof (rule+)
+    fix i sp p
+    assume "i <= k" and in_cong:"p : cong_xi i" and sp:"rho (Suc t+tt+k+i) p = Active sp"
+    have "conc sp & x sp mod k = i mod k" using sp in_cong `i <= k`
+    proof (induction i arbitrary: p sp)
+      case 0
+      hence eq1:"x sp mod k = Suc (t + tt + k - snd (ref_lvup xi t)) mod k"
+        using ref_cong_x[of "t+tt+k" p sp] nonAsleepAgain2[of t p "tt+k"] assms(1)
+        unfolding cong_xi_def by (smt (verit, del_insts) add.left_commute add.right_neutral mem_Collect_eq plus_1_eq_Suc proc_state.simps(3))
+      have eq2:"Suc (t+tt - snd (ref_lvup xi (t+tt))) mod k = 0"
+        using xi0 ref_cong_x[of "t+tt" xi "sxi (Suc tt)"] nonAsleepAgain2[of t xi tt] sxi
+        by (metis add_Suc_right proc_state.simps(3))
+      have "x sp mod k = 0"
+      proof (cases "(t+c) mod k = 0")
+        case False
+        thus "x sp mod k = 0" using eq1 eq2
+          by (smt (z3) Nat.add_diff_assoc2 diff_le_self le_add1 le_trans mod_Suc mod_add_self2 mult_Suc numeral_3_eq_3 ref_inf_t s same_ref tt_def)
+      next
+        case True
+        thus "x sp mod k = 0" using eq1 eq2 by (metis add_cancel_right_right mod_Suc mod_add_self2 ordered_cancel_comm_monoid_diff_class.add_diff_assoc2 ref_inf_t s tt_def)
+      qed
+
+
+      moreover define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t+tt+k)) p) (rho (t+tt+k))"
+      obtain ssp where "rho (t+tt+k) p = Active ssp" using nonAsleepAgain2[of t p "tt+k"] assms(1) by (metis add.assoc)
+      hence "k_mod.gen_nextState k p ssp msg sp" using transition run sp assms(2) `rho (Suc t+tt+k+0) p = Active sp` unfolding msg_def by auto
+      ultimately show ?case unfolding k_mod.gen_nextState_def by auto
+    next
+      case (Suc i) 
+      define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (Suc (t+tt+k+Suc i)) p) (rho (t+tt+k+Suc i))"
+      have inc:"ALL q : {p. msg p ~= Void}. EX s. msg q = Content s & conc s & x s mod k = i"
+      proof 
+        fix q
+        assume "q : {p. msg p ~= Void}"
+        hence q_in_HO:"q : HO (Suc t+tt+k+Suc i) p" unfolding msg_def HOrcvdMsgs_def by auto
+        hence "q : cong_xi i" using `Suc i <= k` vue_incluse `p : cong_xi (Suc i)` by (smt (z3) Suc_le_lessD UN_I add.commute add_Suc subsetD)
+        moreover obtain sq where sq:"rho (t+tt+k+Suc i) q = Active sq" using assms(1) nonAsleepAgain2[of t q "tt+k+Suc i"] by (metis add.assoc)
+        ultimately have "x sq mod k = i & conc sq" using Suc.IH `Suc i <= k` by auto
+        moreover have "msg q = Content sq" using q_in_HO unfolding msg_def HOrcvdMsgs_def by (metis HOrcvdMsgs_def add_Suc sending sq)
+        ultimately show "EX s. msg q = Content s & conc s & x s mod k = i" by auto
+      qed
+      obtain spp where spp:"rho (t+tt+k+Suc i) p = Active spp" using assms(1) nonAsleepAgain2[of t p "tt+k+Suc i"] by (metis add.assoc)
+      obtain q sq where "msg q = Content sq" and "k_mod.minMsgs msg = x sq" and "rho (t+tt+k+Suc i) q = Active sq" 
+        using adopt_incoming[of "t+tt+k+Suc i" p _ msg] spp unfolding msg_def by auto
+      obtain sq2 where "msg q = Content sq2" and "x sq2 mod k = i" using inc `msg q = Content sq` by (metis (mono_tags, lifting) mem_Collect_eq message.distinct(3))
+      hence "x sq mod k = i" using `msg q = Content sq` by auto
+      hence min_i:"k_mod.minMsgs msg mod k = i" using `k_mod.minMsgs msg = x sq` by auto
+      hence "k_mod.isSynch k msg" using inc unfolding k_mod.isSynch_def by auto
+      moreover have "k_mod.gen_nextState k p spp msg sp" using transition[of "t+tt+k+Suc i" p spp sp] Suc.prems(1) spp unfolding msg_def by auto
+      ultimately show "conc sp & x sp mod k = (Suc i) mod k" using min_i `Suc i <= k` unfolding k_mod.gen_nextState_def
+        by (metis Suc_diff_1 dual_order.strict_trans1 k_mod.goto_level1_def k_mod.goto_level2_def mod_Suc mod_mod_trivial zero_less_Suc)
+    qed
+    thus "conc sp " and " x sp mod k = i mod k"  by auto
+  qed
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) xi (HO (Suc (t+tt+k+k)) xi) (rho (t+tt+k+k))"
+  have inc_ho:"ALL p sp. msg p = Content sp --> conc sp & x sp mod k = k - 1"
+  proof -
+    { 
+      fix p sp
+      assume sp:"msg p = Content sp"
+      hence ho_xi:"p : HO (t+tt+k+Suc k) xi" unfolding msg_def HOrcvdMsgs_def by simp
+      moreover have "ref_lvup xi (t+(tt+k+k)) = ref_lvup xi t" using same_ref unfolding tt_def by auto 
+      hence "ref_lvup xi (t+tt+k+k) = ref_lvup xi t" by (simp add:add.assoc)
+      hence "xi : cong_xi (Suc (k-1))" using k2 unfolding cong_xi_def by auto
+      hence "p : cong_xi (k-1)" using vue_incluse ho_xi by (smt (z3) Suc_diff_1 UN_I diff_less dual_order.strict_trans k2 less_2_cases_iff subsetD zero_less_one)
+      moreover have "rho (t+tt+k+k) p = Active sp" using sending_rec[of xi "t+tt+k+k" p sp] using sp unfolding msg_def by auto
+      ultimately have "conc sp  & x sp mod k = (k - 1) mod k"
+        using monoval sp k2 by (smt (z3) Suc_1 Suc_diff_1 Suc_lessD add.assoc add.right_neutral add_Suc_right diff_le_self plus_1_eq_Suc)
+      hence "conc sp  & x sp mod k = k - 1" by (metis diff_less dual_order.strict_trans k2 less_2_cases_iff mod_less zero_less_one)
+    }
+    thus ?thesis by blast
+  qed
+  hence minmsg:"k_mod.minMsgs msg mod k = k - 1" using adopt_incoming[of "t+tt+k+k" xi "sxi (tt+k+k)" msg]
+    using sxi unfolding msg_def by (smt (z3) add.commute add.left_commute)
+  have "k_mod.isSynch k msg"
+  proof -
+    {
+      fix p
+      assume non_void:"msg p ~= Void"
+      obtain sp where "rho (t+tt+k+k) p = Active sp" using nonAsleepAgain2[of t p "tt+k+k"] assms(1) by (metis add.assoc)
+      hence "msg p = Content sp" using sending using non_void unfolding msg_def by auto
+      hence "EX sp. msg p = Content sp & conc sp & x sp mod k = k_mod.minMsgs msg mod k" using inc_ho minmsg by auto
+    }
+    thus "k_mod.isSynch k msg" unfolding k_mod.isSynch_def by blast
+  qed
+  hence "level (sxi (tt+k+k)) = 0 --> k_mod.goto_level1 k msg (sxi (tt+k+k))" using sxi minmsg unfolding k_mod.goto_level1_def by auto
+  moreover have "k_mod.gen_nextState k xi (sxi (tt+k+k)) msg (sxi (tt+k+Suc k))"
+    using transition[of "t+tt+k+k" xi "sxi (tt+k+k)" "sxi (tt+k+Suc k)"] sxi unfolding msg_def by (metis add.assoc add_Suc_right)
+  ultimately have "level (sxi (tt+k+Suc k)) > 0" unfolding k_mod.gen_nextState_def by auto
+  moreover have "tt < k" using k2 unfolding tt_def by auto
+  hence "3 * k >= tt + k + Suc k" by linarith
+  hence "rho (t+tt+k+Suc k+(3*k - (tt+k+Suc k))) xi = Active (sxi (3*k))"
+    using sxi by (smt (verit, best) Suc_leI add.assoc add.commute add_diff_inverse_nat diff_add_inverse2 not_less_eq_eq numeral_3_eq_3)
+  ultimately show ?thesis using level_growing[of "t+tt+k+Suc k" xi "sxi (tt+k+Suc k)" "(3 * k) - (tt+k+Suc k)" "sxi (3*k)"] sxi
+    by (metis add.commute add.left_commute neq0_conv not_le)
 qed
+
+definition early_lvup_non_xi where
+"early_lvup_non_xi = {lv. lv : L_minus_xi & (let (f,t) = lv in  (ALL s. rho t xi = Active s --> level s = 0))}"
+definition early_lvup where
+"early_lvup = {lv. lv : L & (let (f,t) = lv in  (ALL s. rho t xi = Active s --> level s = 0))}"
+lemma non_xi_in_all_early: "early_lvup_non_xi <= early_lvup" unfolding early_lvup_def early_lvup_non_xi_def L_def L_minus_xi_def by auto
+
+lemma no_early_fire:
+assumes "(f,t) : early_lvup"
+shows "f < 2"
+proof (rule ccontr)
+  assume "~ (f < 2)"
+  obtain p sp ssp where 
+    ssp:"rho t p = Active ssp" and fssp:"level ssp = f" and newf:"if f = 0 then t > 0 --> rho (t-1) p = Asleep else rho (t-1) p = Active sp & level sp = f-1"
+    using assms unfolding early_lvup_def L_def levup_def by blast
+  hence sp:"rho (t-1) p = Active sp" and fsp:"level sp = f-1" using `~ (f < 2)` by auto
+  hence t:"t > 0" using fsp fssp sp ssp `~ (f < 2)` by (metis A2 dual_order.strict_trans gr0I k2 zero_less_numeral)
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO t p) (rho (t-1))" 
+  have trans:"k_mod.gen_nextState k p sp msg ssp"
+    using t ssp sp transition[of "t-1"]  unfolding msg_def by (metis Suc_diff_1)
+  show "False"
+  proof (cases "f = 2")
+    case True
+    hence goto2:"k_mod.goto_level2 k msg sp" and "x ssp = 0 | x ssp = Suc (k_mod.minMsgs msg)" using trans fsp fssp unfolding k_mod.gen_nextState_def by auto
+    hence "x ssp mod k = 0" using mod_Suc_eq[of "k_mod.minMsgs msg" k]
+      unfolding k_mod.goto_level2_def by (metis Suc_diff_1 dual_order.strict_trans k2 less_2_cases_iff mod_less mod_self)
+    have "k_mod.isSynch k msg & k_mod.isReady msg" using goto2 unfolding k_mod.goto_level2_def by simp
+    moreover have t:"t >= k" using True fsp fssp sp ssp by (metis A2 less_one not_le_imp_less not_numeral_less_one)
+    ultimately obtain s where s:"rho (t-k) xi = Active s" and "ready s" and "x s mod k = 0"
+      using A1[of xi p "t-k" 0 ssp] t k2 ssp star `x ssp mod k = 0` unfolding msg_def by auto
+    hence "t > k & rho (t-k-1) xi ~= Asleep" using starting[of "t-k"] unfolding k_mod.gen_initState_def by (metis locState.select_convs(3) zero_less_diff)
+    then obtain ss where ss:"rho (t-k-1) xi = Active ss" and "t > k" by (cases "rho (t-k-1) xi") auto
+    define msgx where "msgx = HOrcvdMsgs (k_mod.gen_HOMachine k) xi (HO (t-k) xi) (rho (t-k-1))" 
+    have "k_mod.gen_nextState k xi ss msgx s"
+      using t s ss transition[of "t-k-1" xi ss s] `t > k` unfolding msgx_def by (metis Suc_diff_1 zero_less_diff)
+    hence "level s > 0" using `ready s` `x s mod k = 0` unfolding k_mod.gen_nextState_def  by auto
+    moreover obtain st where st:"rho t xi = Active st" using nonAsleepAgain2[of "t-k" xi k] `t >= k` s by auto
+    ultimately have "level st > 0" using level_growing[of "t-k" xi s k st] s `t >= k` by auto
+    thus "False" using assms st unfolding early_lvup_def by auto
+  next
+    case False
+    thus "False" using ssp `level ssp = f` `~ (f < 2)` sp `level sp = f - 1` trans unfolding k_mod.gen_nextState_def by auto
+  qed
+qed
+
+lemma lvup_unique:
+assumes "levup f t p"
+and "levup f t2 p"
+and "t <= t2"
+shows "t = t2"
+proof (rule ccontr)
+  assume "t ~= t2"
+  hence "t < t2" using assms(3) by auto
+  obtain ssp where 
+    ssp:"rho t p = Active ssp" and fssp:"level ssp = f" 
+    using assms(1) unfolding early_lvup_def L_def levup_def by blast
+  then obtain sp2 where 
+    newf2:"if f = 0 then t2 > 0 --> rho (t2-1) p = Asleep else rho (t2-1) p = Active sp2 & level sp2 = f-1"
+    using assms(2) unfolding levup_def by blast
+  show "False"
+  proof (cases f)
+    case 0
+    hence "rho (t2 - 1) p = Asleep" using newf2 `t < t2` by auto
+    thus "False" using nonAsleepAgain2[of t p "t2-1-t"] ssp `t < t2` by auto
+  next
+    case (Suc ff)
+    hence "rho (t2-1) p = Active sp2 & level sp2 = f - 1" using newf2 by auto
+    thus "False" using level_growing[of t p ssp "t2-1-t"] `t < t2` ssp fssp Suc by auto
+  qed
+qed
+
+lemma card_union:
+assumes "card e1 <= (N :: nat) - 1"
+and "card e2 <= N - 1"
+shows "card (e1 Un e2) <= 2 * (N - 1)"
+using Finite_Set.card_Un_le by (smt (z3) add.assoc add.left_commute assms(1) assms(2) mult_2 nat_le_iff_add)
+
+lemma max_lvup:
+"card early_lvup_non_xi <= 2 * (N - 1)"
+proof -
+  define get_lvup where "get_lvup = (%f p. SOME t. levup f t p)"
+  have "ALL tup : early_lvup_non_xi. EX p ~= xi. (let (f,t) = tup in get_lvup f p = t)"
+  proof -
+    {
+      fix f t
+      assume early:"(f,t) : early_lvup_non_xi"
+      then obtain p where lvt:"levup f t p" and "p ~= xi"
+        unfolding early_lvup_non_xi_def L_minus_xi_def levup_def by blast
+      define t2 where "t2 = get_lvup f p"
+      hence lvt2:"levup f t2 p" using someI_ex[of "%t. levup f t p"] lvt unfolding get_lvup_def by auto
+      hence "t = t2" using lvup_unique lvt by (metis nat_le_linear)
+      hence "EX p. p ~= xi & get_lvup f p = t" using `p ~= xi` unfolding t2_def by auto
+    }
+    thus  "ALL tup : early_lvup_non_xi. EX p ~= xi. (let (f,t) = tup in get_lvup f p = t)" by fastforce
+  qed
+  hence "ALL tup : early_lvup_non_xi. EX p ~= xi. get_lvup (fst tup) p = snd tup & (fst tup = 0 | fst tup = 1)"
+    using no_early_fire less_2_cases_iff non_xi_in_all_early by fastforce
+  hence "early_lvup_non_xi <= ((%t. (0,t)) ` (get_lvup 0) ` {p. p ~= xi}) Un ((%t. (1,t)) ` (get_lvup 1) ` {p. p ~= xi})" (is "_ <= ?e1 Un ?e2")
+    by fastforce
+  moreover have "card {p. p ~= xi} <= N - 1"
+    using finite_UNIV
+    by (metis (mono_tags, lifting) Suc_leI UNIV_I card_Diff_singleton card_Suc_Diff1 card_seteq mem_Collect_eq not_le subset_UNIV)
+  hence "card ?e1 <= N - 1 & card ?e2 <= N - 1" 
+    by (smt (z3) card_image_le finite image_image le_trans)
+  moreover have "finite ?e1 & finite ?e2" by auto
+  ultimately show ?thesis by (meson card_mono card_union finite_UnI le_trans)
+qed
+
+lemma inj_strict:
+assumes "ALL i < b. (f :: nat => nat * nat) (Suc i) > f (i :: nat)"
+shows "inj_on f {i. i <= b}"
+proof -
+  {
+    fix i j 
+    assume "i <= b" and "j <= b" 
+    hence "i < j --> f i < f j"
+    proof (induction "j - i" arbitrary: i j)
+      case 0
+      thus ?case by simp
+    next
+      case (Suc d)
+      hence ind:"i < j - 1 --> f i < f (j - 1)" by auto
+      thus ?case using Suc by (smt (verit, ccfv_threshold) Suc_diff_Suc Suc_leI assms diff_Suc_1 dual_order.strict_trans less_le_trans linorder_neqE_nat not_less_eq)
+    qed
+  }
+  hence "ALL i j. i <= b --> j <= b --> i < j --> f i < f j" by blast
+  thus "inj_on f {i. i <= b}" by (metis (mono_tags, lifting) less_le linorder_inj_onI mem_Collect_eq nat_le_linear)
+qed
+
+lemma xi_reaches_lv1:
+assumes "ALL p. rho t p ~= Asleep"
+and "rho (t + (2 * N - 1) * (3 * k)) xi = Active s" (is "rho (t+?t) _ = _")
+and "t > 0"
+shows "level s > 0"
+proof (rule ccontr)
+  assume "~ (level s > 0)"
+  define h where "h = 3 * k"
+  define z_incr where "z_incr = (%i. ref_lvup xi (t + i * h))"
+  obtain sxi where sxi:"ALL i. rho (t+i) xi = Active (sxi i)"
+    using nonAsleepAgain2[of t] by (meson assms(1))
+  have "ALL i. z_incr (Suc i) >= z_incr i"  
+  proof 
+    fix i
+    have "ALL j. rho (Suc t+i*h+j) xi ~= Asleep" using sxi by (metis add.assoc add_Suc_shift proc_state.simps(3))
+    hence "active_path xi xi (Suc t+i*h) h"
+      using loop exI[of "%s. _ & _ & (ALL j < h. _ & s j : _ (s (Suc j)))" "%_. xi"]
+      unfolding active_path_def by auto
+    thus "z_incr (Suc i) >= z_incr i" using growing_path[of xi xi "t+i*h"] sxi unfolding z_incr_def
+      by (smt (z3) Suc_eq_plus1 add.commute add.left_commute mult.commute mult_Suc_right proc_state.simps(3))
+  qed
+  moreover have "ALL i < 2 * N - 1. z_incr (Suc i) ~= z_incr i"
+  proof (rule+)
+    fix i
+    assume "i < 2 * N - 1" and "z_incr (Suc i) = z_incr i"
+    hence same_r:"ref_lvup xi (t+i*h) = ref_lvup xi (t+i*h+h)"
+      unfolding z_incr_def by (metis add.assoc add.commute mult_Suc)
+    hence "?t >= Suc i * h" using Suc_leI h_def mult_le_mono1 `i < 2 * N - 1` by presburger
+    hence "level (sxi (i*h+h)) = 0"
+      using level_growing[of "t+Suc i*h" xi "sxi (Suc i*h)" "?t - (Suc i)*h" "sxi ((2*N-1)*h)"] sxi `~ (level s > 0)` assms(2)
+      unfolding h_def
+      by (smt (z3) add.assoc add.commute gr0I le_0_eq le_add_diff_inverse mult.assoc mult_Suc proc_state.inject)
+    moreover have "ALL p. rho (t+i*h) p ~= Asleep"
+      using assms(1) nonAsleepAgain2[of _ _ "i*h"] by (metis proc_state.simps(3))
+    ultimately show "False"
+      using xi_lev1[of "t+i*h"] `t > 0` sxi same_r unfolding h_def by (simp add: ab_semigroup_add_class.add_ac(1))
+  qed
+  ultimately have "ALL i < 2 * N - 1. z_incr (Suc i) > z_incr i" by (metis less_le)
+  hence "inj_on z_incr {i. i <= 2 * N - 1}" using inj_strict by auto
+  moreover have "N > 0" by (simp add: finite_UNIV_card_ge_0)
+  hence "card {i. i <= 2 * N - 1} = 2 * N" using card_Collect_less_nat by auto
+  ultimately have "card (z_incr ` {i. i <= 2 * N - 1}) = 2 * N" (is "card ?range_xi = _") using card_image by metis
+
+  have "?range_xi <= early_lvup_non_xi Un (%t. (0,t)) ` {t. levup 0 t xi}"
+  proof -
+    {
+      fix i
+      assume "i <= 2 * N - 1" and non_xi:"~ (z_incr i) : (Pair 0) ` {t. levup 0 t xi}"
+      obtain f tt where ft:"(f,tt) = z_incr i" by (metis prod.exhaust_sel)
+      then obtain p where "levup f tt p"
+        using in_L[of "t+i*h" xi "sxi (i*h)"] sxi unfolding z_incr_def L_def by auto
+      have "tt <= t + i * h" using ref_inf_t[of "t+i*h" xi "sxi (i*h)"] sxi ft snd_conv unfolding z_incr_def by metis
+      hence "tt <= t + (2 * N - 1) * (3 * k)" using `i <= 2 * N - 1` h_def by (smt (z3) add.commute comm_semiring_class.distrib le_diff_conv less_eqE trans_le_add1)
+      hence "ALL ss. rho tt xi = Active ss --> level ss = 0"
+        using level_growing[of tt xi _ "t + (2 * N - 1) * (3 * k) - tt" s] assms `~ (level s > 0)` by auto
+      moreover from this have "ALL f. levup f tt xi --> f = 0" unfolding levup_def by auto
+      hence "p ~= xi" using non_xi `levup f tt p` ft unfolding z_incr_def by (metis image_eqI mem_Collect_eq)
+      hence "(f,tt) : L_minus_xi" using `levup f tt p` unfolding L_minus_xi_def by auto
+      ultimately have "z_incr i : early_lvup_non_xi" using `(f,tt) : L_minus_xi` ft unfolding early_lvup_non_xi_def by auto
+    }
+    thus "?range_xi <= early_lvup_non_xi Un (Pair 0) ` {t. levup 0 t xi}" by fastforce
+  qed
+  moreover have card0_or_1:"{t. levup 0 t xi} ~= {} --> card {t. levup 0 t xi} = 1" (is "_ --> card ?lev0_xi = _")
+  proof 
+    assume "{t. levup 0 t xi} ~= {}"
+    moreover from this obtain tt where tt:"levup 0 tt xi" by auto
+    moreover have "ALL ttt. levup 0 ttt xi --> ttt = tt"
+      using lvup_unique[of 0 _ xi] tt by (metis linear)
+    moreover from this have "finite ?lev0_xi" using finite_nat_set_iff_bounded_le by auto
+    ultimately show "card ?lev0_xi = 1" using card_Diff_singleton[of _ tt] tt
+    by (metis (no_types, lifting) One_nat_def Suc_leI card_gt_0_iff card_le_Suc0_iff_eq diff_diff_cancel diff_is_0_eq diff_zero mem_Collect_eq)
+  qed
+  hence fin_lev0:"finite ?lev0_xi" by (metis card_eq_0_iff infinite_imp_nonempty zero_neq_one)
+  hence "finite (early_lvup_non_xi Un Pair 0 ` ?lev0_xi)" using finite_L finite_subset[of early_lvup_non_xi L] unfolding early_lvup_non_xi_def L_minus_xi_def L_def by auto
+  ultimately have "card ?range_xi <= card early_lvup_non_xi + 1"
+    using card_Un_le[of early_lvup_non_xi] card_image_le[of ?lev0_xi "Pair 0"] card_mono[of "early_lvup_non_xi Un Pair 0 ` ?lev0_xi"]
+    by (smt (z3) Nat.add_0_right One_nat_def Suc_pred fin_lev0 card0_or_1 card.empty card_gt_0_iff diff_is_0_eq' finite_imageI le_0_eq le_trans trans_le_add1)
+  thus "False"
+    using max_lvup `N > 0` `card ?range_xi = 2 * N` by auto
+qed
+
+lemma no_fire_before_xi_lev1:
+assumes "rho t xi = Active s"
+and "level s = 0"
+shows "fst (ref_lvup xi t) < 2"
+proof (rule ccontr)
+  assume ccontr:"~ fst (ref_lvup xi t) < 2"
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) xi (HO (Suc t) xi) (rho t)" 
+  have "k_mod.maxForce msg >= 3" (is "?f >= 3") using ccontr unfolding ref_lvup_def msg_def
+    by (metis A2_bis One_nat_def Suc_1 Suc_leI adopt_incoming assms(1) fst_conv le_add_diff_inverse not_less_eq numeral_3_eq_3 plus_1_eq_Suc)
+  from this obtain q sq sqq where sqq:"rho (t - k_mod.minMsgs msg) q = Active sqq" and "level sqq = ?f - 1"
+    and sq:"rho (t - Suc (k_mod.minMsgs msg)) q = Active sq" and "level sq = ?f - 2"
+    using assms A5[of t xi s ?f "Suc (k_mod.minMsgs msg)"] unfolding msg_def by auto
+  hence tq:"t >= Suc (k_mod.minMsgs msg)" using `?f >= 3`
+    by (metis A2 One_nat_def diff_is_0_eq dual_order.strict_trans k2 less_2_cases_iff nat_le_linear not_less_eq_eq numeral_3_eq_3)
+  define tq where "tq = t - Suc (k_mod.minMsgs msg)"
+  define msgq where "msgq = HOrcvdMsgs (k_mod.gen_HOMachine k) q (HO (Suc tq) q) (rho tq)" 
+  have trans:"k_mod.gen_nextState k q sq msgq sqq"  
+    using sq sqq tq transition[of "t - Suc (k_mod.minMsgs msg)" q sq sqq]
+    unfolding msgq_def tq_def by (simp add: Suc_diff_Suc Suc_le_lessD)
+  hence "k_mod.goto_level2 k msgq sq" 
+    using `?f >= 3` `level sq = ?f - 2` `level sqq = ?f - 1` unfolding k_mod.gen_nextState_def by auto
+  hence "x sqq mod k = 0" using trans unfolding k_mod.goto_level2_def k_mod.gen_nextState_def
+    by (metis Suc_diff_1 k2 less_trans mod_Suc mod_less zero_less_numeral)
+  have "tq >= k" using sq `level sq = ?f - 2` `?f >= 3` A2[of tq q sq]
+    unfolding tq_def by (metis `k_mod.goto_level2 k msgq sq` k_mod.goto_level2_def not_le zero_neq_one) 
+  hence "EX sx. rho (Suc tq-k) xi = Active sx & (k_mod.isReady msgq --> ready sx)"
+    using A1[of xi q "Suc tq-k" 0 sqq] sqq `k_mod.goto_level2 k msgq sq` `x sqq mod k = 0` star k2
+    unfolding tq_def k_mod.goto_level2_def msgq_def
+    by (smt (verit, ccfv_SIG) A2 Suc_diff_Suc Suc_le_lessD Zero_not_Suc `?f >= 3` `level sq = ?f - 2` `level sqq = ?f - 1`
+    add.commute add.right_neutral add_diff_inverse_nat diff_Suc_1 diff_zero dual_order.strict_trans less_add_Suc1 numeral_3_eq_3 plus_1_eq_Suc tq)
+  then obtain sx where sx:"rho (Suc tq-k) xi = Active sx & ready sx"
+    using `k_mod.goto_level2 k msgq sq` unfolding k_mod.goto_level2_def by auto
+  hence "level sx > 0" using ready_level by auto
+  thus "False"
+    using assms level_growing[of "Suc tq - k" xi sx "t - (Suc tq - k)" s] sx tq unfolding tq_def by fastforce
+qed
+
+lemma merge_path:
+assumes "active_path p q t i"
+and "active_path q r (t+i) j"
+shows "active_path p r t (i+j)"
+proof -
+  obtain seq where seq:"seq 0 = p & seq i = q & (ALL h < i. rho (t+h) (seq (Suc h)) ~= Asleep & seq h : HO (t + Suc h) (seq (Suc h)))"
+    using assms(1) unfolding active_path_def by presburger
+  obtain seq2 where seq2:"seq2 0 = q & seq2 j = r & (ALL h < j. rho (t+i+h) (seq2 (Suc h)) ~= Asleep & seq2 h : HO (t + i + Suc h) (seq2 (Suc h)))"
+    using assms(2) unfolding active_path_def by presburger
+  define seq3 where "seq3 = (%h. if h <= i then seq h else seq2 (h - i))"
+  have "seq3 0 = p & seq3 (i+j) = r"
+    using seq seq2 unfolding seq3_def by auto
+  moreover have "ALL h < i+j. rho (t+h) (seq3 (Suc h)) ~= Asleep & seq3 h : HO (t + Suc h) (seq3 (Suc h))"
+  proof -
+    {
+      fix h
+      assume "h < i + j"
+      have "rho (t+h) (seq3 (Suc h)) ~= Asleep & seq3 h : HO (t + Suc h) (seq3 (Suc h))"
+      proof (cases "h < i")
+        case True
+        thus "rho (t+h) (seq3 (Suc h)) ~= Asleep & seq3 h : HO (t + Suc h) (seq3 (Suc h))"
+          using seq seq2 unfolding seq3_def by auto
+      next
+        case False
+        hence "rho (t+i+(h-i)) (seq2 (Suc (h-i))) ~= Asleep & seq2 (h-i) : HO (t + i + Suc (h-i)) (seq2 (Suc (h-i)))"
+          using seq2 `h < i + j` by (metis add_diff_cancel_left' le_add_diff_inverse2 less_diff_conv not_le_imp_less)
+        thus "rho (t+h) (seq3 (Suc h)) ~= Asleep & seq3 h : HO (t + Suc h) (seq3 (Suc h))"
+          using `h < i + j` False Suc_diff_le seq seq2 unfolding seq3_def by fastforce
+      qed
+    }
+    thus "ALL h < i+j. rho (t+h) (seq3 (Suc h)) ~= Asleep & seq3 h : HO (t + Suc h) (seq3 (Suc h))" by blast
+  qed
+  ultimately show ?thesis using exI[of _ seq3] unfolding active_path_def by auto
+qed
+
+definition txi where "txi = (LEAST t. EX s. rho t xi = Active s & level s > 0)"
+definition txi2 where "txi2 = (LEAST tt. (ALL p. rho tt p ~= Asleep) & tt >= txi & (tt - txi) mod k = 0)"
+
+lemma txi_props:
+assumes "t > 0"
+and "ALL p. rho t p ~= Asleep"
+shows "ALL p. rho txi2 p ~= Asleep"
+and "txi2 >= txi"
+and "(txi2 - txi) mod k = 0"
+and "EX ss. rho txi xi = Active ss & level ss > 0"
+and "txi2 <= t + (2 * N - 1) * (3 * k)"
+proof -
+  have "txi + t * k >= t" using k2
+    by (metis Suc_leI le_add1 le_trans mult.right_neutral mult_le_mono order_refl plus_1_eq_Suc trans_le_add2)
+  hence "ALL p. rho (txi + t * k) p ~= Asleep" using nonAsleepAgain2[of t _ "txi + t * k - t"] k2 assms(2)
+    by (metis le_add_diff_inverse proc_state.simps(3)) 
+  hence "(ALL p. rho txi2 p ~= Asleep) & txi2 >= txi & (txi2 - txi) mod k = 0"
+    using Least_le unfolding txi2_def by (smt (verit, del_insts) LeastI_ex add.commute diff_add_inverse2 le_add2 mod_mult_self1_is_0 mult.commute)
+  thus act:"ALL p. rho txi2 p ~= Asleep" and "txi2 >= txi" and "(txi2 - txi) mod k = 0" by auto
+  define txi3 where "txi3 = t + (2 * N - 1) * (3 * k)"
+  obtain ss3 where ss3:"rho txi3 xi = Active ss3"
+    using nonAsleepAgain2 assms(2) unfolding txi3_def by presburger
+  hence "level ss3 > 0" using xi_reaches_lv1[of t ss3] assms unfolding txi3_def by auto
+  hence txi3:"EX s. rho txi3 xi = Active s & level s > 0" using ss3 by auto
+  thus "EX ss. rho txi xi = Active ss & level ss > 0" (is "?P txi")
+    using LeastI_ex[of "%t. EX s. rho t xi = Active s & level s > 0"]
+    LeastI_ex[of "%t. EX s. rho t xi = Active s & level s > 0"]
+    exI[of "%t. EX s. rho t xi = Active s & level s > 0" txi2] unfolding txi_def by auto
+  show "txi2 <= t + (2 * N - 1) * (3 * k)"
+  proof (cases "txi < t")
+    case False
+    moreover from this have "ALL p. rho txi p ~= Asleep" using assms nonAsleepAgain2[of t _ "txi - t"]
+      by (metis add_diff_inverse_nat proc_state.simps(3))
+    ultimately have "txi >= txi2"
+      using Least_le[of "%t. (ALL p. rho t p ~= Asleep) & t >= txi & (t - txi) mod k = 0" txi]
+      unfolding txi2_def by auto
+    moreover have "txi3 >= txi"
+      using Least_le[of _ txi3] `EX ss. rho txi3 xi = Active ss & level ss > 0` unfolding txi_def by auto
+    ultimately show "txi2 <= t + (2 * N - 1) * (3 * k)" unfolding txi3_def by auto
+  next
+    case True
+    define txi4 where "txi4 = t + (k - (t - txi) mod k)"
+    have "(txi4 - txi) mod k = 0" unfolding txi4_def
+      by (smt (z3) Nat.add_diff_assoc2 Suc_1 Suc_lessD True add.commute add_diff_inverse_nat k2 less_or_eq_imp_le
+      mod_add_right_eq mod_le_divisor mod_self not_le plus_1_eq_Suc zero_less_Suc)
+    hence "(ALL p. rho txi4 p ~= Asleep) & txi4 >= txi & (txi4 - txi) mod k = 0"
+      using nonAsleepAgain2[of t _ "txi4 - t"] assms(2) True unfolding txi4_def
+      by (metis le_add1 le_add_diff_inverse le_trans less_or_eq_imp_le proc_state.simps(3))
+    hence "txi2 <= txi4" using Least_le[of _ txi4] unfolding txi2_def by auto
+    hence "txi2 <= t + 1 * (3 * k) + (2 * N - 2) * (3 * k)" unfolding txi4_def by linarith
+    moreover have "2 * N >= 2" using not_less_eq_eq by fastforce
+    ultimately show "txi2 <= t + (2 * N - 1) * (3 * k)"
+      by (smt (z3) add.assoc add_diff_cancel_left' le_add_diff_inverse mult_Suc nat_mult_1 one_add_one plus_1_eq_Suc)
+  qed
+qed
+
+lemma txi_props2:
+shows "ALL p. rho txi2 p ~= Asleep"
+and "txi2 >= txi"
+and "(txi2 - txi) mod k = 0"
+and "EX ss. rho txi xi = Active ss & level ss > 0"
+and "txi2 > 0"
+proof -
+  obtain t where "ALL p. rho t p ~= Asleep" using complete by auto
+  hence "ALL p. rho (Suc t) p ~= Asleep" using nonAsleepAgain2[of t _ 1] by (metis Suc_eq_plus1 proc_state.simps(3))
+  thus "ALL p. rho txi2 p ~= Asleep"
+    and "txi2 >= txi"
+    and "(txi2 - txi) mod k = 0"
+    and "EX ss. rho txi xi = Active ss & level ss > 0"
+    using txi_props[of "Suc t"] by auto
+  hence "txi > 0" using starting[of txi xi] k_mod.gen_initState_def by (metis less_numeral_extra(3) locState.select_convs(5))
+  thus "txi2 > 0" using `txi2 >= txi` by auto
+qed
+
+lemma xi_lev1_monovalent:
+assumes "rho (txi2 + k) p = Active sp"
+and "txi2 > 0"
+shows "x sp mod k = 0"
+proof -
+  obtain ss where ss:"rho txi xi = Active ss" and "level ss > 0" using txi_props2(4) by auto
+  have txi_init:"txi > 0 & rho (txi-1) xi ~= Asleep"
+    using starting[of txi xi ss] ss `level ss > 0` unfolding k_mod.gen_initState_def by fastforce
+  then obtain sss where sss:"rho (txi-1) xi = Active sss" by (cases "rho (txi-1) xi") auto
+  hence "level sss = 0" using Least_le[of _ "txi-1"] txi_init unfolding txi_def by (metis (mono_tags, lifting) Suc_n_not_le_n Suc_pred' zero_order(5))
+  define msg where "msg = HOrcvdMsgs (k_mod.gen_HOMachine k) xi (HO txi xi) (rho (txi-1))" 
+  have "k_mod.maxForce msg < 3" using no_fire_before_xi_lev1 sss txi_init `level sss = 0`
+    unfolding ref_lvup_def msg_def by (metis One_nat_def Suc_leI Suc_pred' add_diff_inverse_nat fst_conv le_imp_less_Suc less_SucI numeral_2_eq_2 numeral_3_eq_3 plus_1_eq_Suc)
+  moreover have "k_mod.gen_nextState k xi sss msg ss"
+    using sss ss transition[of _ xi sss ss] txi_init unfolding msg_def by (metis Suc_diff_1)
+  ultimately have "x ss = 0 & forc ss = 2" using `level ss > 0` `level sss = 0` sss ss txi_init
+    unfolding k_mod.gen_nextState_def by (metis One_nat_def Suc_1 gr_implies_not0 k_mod.goto_level2_def not_less_eq numeral_3_eq_3)
+
+
+  have inc_link:"ALL q. rho txi q ~= Asleep --> xi : HO (Suc txi) q --> ref_lvup q txi >= (1, txi)"
+  proof (rule+)
+    fix q
+    assume "rho txi q ~= Asleep" and "xi : HO (Suc txi) q"
+    define msgq where "msgq = HOrcvdMsgs (k_mod.gen_HOMachine k) q (HO (Suc txi) q) (rho (txi))" 
+    have "msgq xi = Content ss" using sending ss `xi : HO (Suc txi) q` unfolding msgq_def by auto
+    thus "ref_lvup q txi >= (1, txi)"
+    proof (cases "k_mod.maxForce msgq = 2")
+      case True
+      hence "k_mod.minMsgs msgq = 0"
+        using Least_le[of "%v. EX s p. msgq p = Content s & forc s = k_mod.maxForce msgq & x s = v" 0]
+        `x ss = 0 & forc ss = 2` `msgq xi = Content ss`
+        unfolding k_mod.minMsgs_def msgq_def by fastforce
+      thus "ref_lvup q txi >= (1, txi)" using True
+        unfolding ref_lvup_def msgq_def by fastforce
+    next
+      case False
+      hence "k_mod.maxForce msgq > 2"
+        using `msgq xi = Content ss` `x ss = 0 & forc ss = 2` Max_ge[of _ 2] finite_UNIV
+        unfolding k_mod.maxForce_def by (smt (z3) finite_imageI image_eqI k_mod.forceMsgs.simps(1) le_neq_implies_less rangeI)
+      thus "ref_lvup q txi >= (1, txi)" 
+        unfolding ref_lvup_def msgq_def by (metis Suc_1 less_diff_conv less_eq_prod_simp plus_1_eq_Suc)
+    qed
+  qed
+
+  define len where "len = txi2-txi+k"
+  have "ALL i. rho (txi+i) xi ~= Asleep" using ss nonAsleepAgain2[of txi xi] by (metis proc_state.simps(3))
+  hence "active_path xi xi txi (txi2 - txi)"
+    using loop exI[of "%s. _ & _ & (ALL j < txi2 - txi. _ & s j : _ (s (Suc j)))" "%_. xi"]
+    unfolding active_path_def by auto
+
+  moreover obtain seq4 where seq4:"seq4 0 = xi & seq4 k = p & (ALL i < k. seq4 i : HO (txi2 + Suc i) (seq4 (Suc i)))"
+    using star unfolding k_mod.path_def by presburger
+  hence "xi : HO (Suc txi2) (seq4 1)" using k2 by auto
+  hence "ALL i < k. rho (txi2+i) (seq4 (Suc i)) ~= Asleep & seq4 i : HO (txi2 + Suc i) (seq4 (Suc i))"
+    using assms(1) nonAsleepAgain2 by (metis txi_props2(1) proc_state.simps(3) seq4)
+  hence "active_path xi p txi2 k" using exI[of _ seq4] seq4 unfolding active_path_def by auto
+
+  ultimately have "active_path xi p txi len" 
+    using merge_path[of xi xi txi "txi2 - txi" p k] txi_props2(2) unfolding len_def by auto
+
+
+  then obtain seq where seq:"seq 0 = xi & seq len = p & (ALL i < len. rho (txi+i) (seq (Suc i)) ~= Asleep & seq i : HO (txi + Suc i) (seq (Suc i)))"
+    unfolding active_path_def by presburger
+  define ref_p where "ref_p = ref_lvup p (txi2+k-1)"
+  define seq2 where "seq2 = (%i. seq (Suc i))"
+  hence "ALL i < len-1. rho (Suc txi+i) (seq2 (Suc i)) ~= Asleep & seq2 i : HO (Suc txi + Suc i) (seq2 (Suc i))"
+    using seq k2 less_diff_conv unfolding seq2_def by auto
+  hence "seq2 0 = seq 1 & seq2 (len-1) = p & (ALL i < len-1. rho (Suc txi+i) (seq2 (Suc i)) ~= Asleep & seq2 i : HO (Suc txi + Suc i) (seq2 (Suc i)))"
+    using assms(1) nonAsleepAgain2 unfolding seq2_def
+    by (metis One_nat_def Suc_diff_1 add_gr_0 dual_order.strict_trans k2 len_def less_2_cases_iff seq)
+  hence "active_path (seq 1) p (Suc txi) (len-1)" using exI[of _ seq2] unfolding active_path_def by auto
+  moreover have "rho txi (seq 1) ~= Asleep & xi : HO (Suc txi) (seq 1)"
+    using k2 seq by (metis add.commute add.right_neutral add_gr_0 dual_order.strict_trans len_def less_2_cases_iff plus_1_eq_Suc)
+  hence "ref_lvup (seq 1) txi >= (1, txi)" and "rho txi (seq 1) ~= Asleep" using inc_link seq by auto
+  ultimately have "(1, txi) <= ref_p" 
+    using growing_path[of "seq 1" p txi "len-1"] txi_props2(2) k2 unfolding len_def ref_p_def by fastforce
+
+  obtain ssp where ssp:"rho (txi2+k-1) p = Active ssp"
+    using nonAsleepAgain2[of txi2 p "k-1"] k2 txi_props2(1) 
+    by (metis Nat.add_diff_assoc Suc_diff_1 dual_order.strict_trans le_add1 plus_1_eq_Suc zero_less_numeral)
+  then obtain q where "levup (fst ref_p) (snd ref_p) q"
+    using in_L[of "txi2+k-1" p] unfolding L_def ref_p_def by auto
+  then obtain sq ssq where "rho (snd ref_p) q = Active sq" and "level sq = fst ref_p" and "rho (snd ref_p - 1) q = Active ssq" and "level ssq = fst ref_p - 1"
+    using `(1, txi) <= ref_p` unfolding levup_def by (metis fst_conv less_one not_le prod_less_def)
+
+  moreover have ref_p_1:"fst ref_p = 1 --> txi <= snd ref_p" using `(1, txi) <= ref_p` by (metis fst_conv less_eq_prod_def nat_less_le snd_conv)
+  have "fst ref_p >= 2 --> txi > snd ref_p --> ref_p : early_lvup"  
+    using sss `level sss = 0` level_growing[of "snd ref_p" xi _ "txi - 1 - snd ref_p" sss] `levup (fst ref_p) (snd ref_p) q` unfolding early_lvup_def L_def by auto
+  hence "txi <= snd ref_p"  
+    using ref_p_1 no_early_fire[of "fst ref_p"] by (metis Suc_1 `(1, txi) <= ref_p` fst_conv less_eq_prod_def not_le not_less_eq prod.collapse snd_conv)
+
+
+  ultimately have "(snd ref_p - txi) mod k = 0"
+    using A4[of "txi-1" "snd ref_p - txi" q ssq sq sss ss] sss ss `level sss = 0` `level ss > 0` `(1, txi) <= ref_p`
+    by (smt (z3) Nat.add_diff_assoc2 Suc_n_not_le_n Suc_pred' add_Suc_shift add_diff_inverse_nat gr_implies_not0 less_eq_prod_simp less_one nat_less_le not_le prod.collapse txi_init)
+
+  define msgp where "msgp = HOrcvdMsgs (k_mod.gen_HOMachine k) p (HO (txi2+k) p) (rho (txi2+k-1))" 
+  have "k_mod.gen_nextState k p ssp msgp sp"
+    using ssp assms k2 transition[of "txi2+k-1" p ssp sp] unfolding txi2_def msgp_def by auto
+  hence "x sp mod k = Suc (k_mod.minMsgs msgp) mod k"
+    unfolding k_mod.gen_nextState_def k_mod.goto_level1_def k_mod.goto_level2_def
+    by (smt (z3) One_nat_def Suc_1 Suc_diff_1 Suc_lessD k2 mod_Suc mod_less)
+  moreover have "k_mod.minMsgs msgp = txi2 + k - 1 - snd ref_p"
+    using k2 minMsgs_inf[of "txi2+k-1" p] ssp unfolding ref_p_def ref_lvup_def msgp_def txi_props(2) 
+    by (metis Suc_diff_1 add.commute add_gr_0 assms(2) diff_diff_cancel plus_1_eq_Suc proc_state.simps(3) snd_conv)
+  ultimately have "x sp mod k = Suc (txi2 + k - 1 - snd ref_p) mod k"
+    using k2 minMsgs_inf[of "txi2+k-1" p] ssp unfolding ref_p_def ref_lvup_def msgp_def by presburger
+  hence "x sp mod k = (txi2 + k - (snd ref_p - txi) - txi) mod k"
+    using `snd ref_p >= txi` txi_props(2) assms(2)
+    by (metis (no_types, lifting) Nat.add_diff_assoc Suc_diff_1 add_gr_0 diff_diff_left
+    le_add_diff_inverse2 plus_1_eq_Suc ref_inf_t ref_p_def ssp)
+  hence "x sp mod k = (txi2 + k - txi) mod k"
+    using `(snd ref_p - txi) mod k = 0` 
+    by (smt (z3) One_nat_def Suc_diff_Suc Suc_eq_plus1 `txi <= snd ref_p`
+    `x sp mod k = Suc (txi2 + k - 1 - snd ref_p) mod k` add.commute diff_diff_cancel diff_le_self
+    diff_zero k2 le_add1 le_trans mod_sub ordered_cancel_comm_monoid_diff_class.add_diff_assoc ref_inf_t ref_p_def ssp)
+  thus "x sp mod k = 0" using txi_props2 by (metis Nat.add_diff_assoc2 mod_add_self2)
+qed
+
+theorem liveness:
+assumes "ALL p. rho t p ~= Asleep"
+shows "k_mod.liveness rho (t + 6 * N * k)"
+proof -
+  define tt where "tt = (LEAST t. ALL p. rho t p ~= Asleep)"
+  have smax:"ALL p. rho tt p ~= Asleep" using LeastI_ex assms unfolding tt_def by (smt (verit, del_insts))
+  have "ALL p sp. rho (txi2 + k) p = Active sp --> x sp mod k = 0"
+    using xi_lev1_monovalent txi_props2(5) by auto
+  moreover have "ALL p. rho (txi2+k-1) p ~= Asleep"
+    using txi_props2(1) nonAsleepAgain2[of txi2 _ "k-1"] k2
+    by (metis Nat.add_diff_assoc2 Suc_1 Suc_lessD add.commute less_or_eq_imp_le proc_state.simps(3))
+  moreover have "ALL p. EX s. rho (txi2 + k + 2 * k) p = Active s"
+    using nonAsleepAgain2[of tt _ "txi2+k+2*k-tt"] smax txi_props2(1)
+    Least_le[of "%t. ALL p. rho t p ~= Asleep" txi2] unfolding tt_def by auto
+  ultimately have lev2:"ALL p. EX sp. rho (txi2 + k + 2 * k) p = Active sp & level sp = 2"
+    using monovalent_termine[of "txi2+k"] k2 by blast
+  show "k_mod.liveness rho (t + 6 * N * k)" 
+  proof (cases t)
+    case (Suc tt)
+    hence "txi2 + k + 2 * k <= t + (2 * N - 1) * (3 * k) + k + 2 * k"
+      using assms txi_props(5)[of t] by fastforce
+    hence "txi2 + k + 2 * k <= t + (2 * N - 1 + 1) * (3 * k)" by simp
+    moreover have "2 * N >= 1" using not_less_eq_eq by fastforce
+    ultimately have "txi2 + k + 2 * k <= t + (2 * N) * (3 * k)" by simp
+    hence txi2:"txi2 + k + 2 * k <= t + 6 * N * k" by simp
+    have "ALL p. EX sp. rho (t + 6 * N * k) p = Active sp & level sp = 2"
+    proof
+      fix p
+      obtain sp where "rho (txi2+k+2*k) p = Active sp" using lev2 by auto
+      hence "EX sp. rho (t + 6 * N * k) p = Active sp & level sp >= 2"
+        using level_growing[of "txi2+k+2*k" p sp "t+6*N*k-(txi2+k+2*k)"]
+        by (metis txi2 assms le_add_diff_inverse lev2 nonAsleepAgain2 proc_state.inject)
+      thus "EX sp. rho (t + 6 * N * k) p = Active sp & level sp = 2"
+        using A2_bis[of "t+6*N*k" p sp] by (meson A2_bis le_antisym)
+    qed
+    thus "k_mod.liveness rho (t + 6 * N * k)" unfolding k_mod.liveness_def by auto
+  next
+    case 0
+    hence "ALL p sp. rho k p = Active sp --> x sp mod k = 0"
+      using nonAsleepAgain2[of 0 _ k] assms monovalent_stable[of 0 0 k]
+      by (metis A2 add.left_neutral diff_0_eq_0 diff_is_0_eq k2 mod_self neq0_conv not_le)
+    moreover have act:"ALL tt p. rho tt p ~= Asleep"
+      using nonAsleepAgain2[of 0] assms 0 by (metis add.left_neutral proc_state.simps(3))
+    hence "ALL p sp. rho (k+2*k) p = Active sp --> level sp = 2" using monovalent_termine[of k] k2 calculation by blast
+    moreover have "2 * N >= 1" using not_less_eq_eq by fastforce
+    hence "t+6*N*k >= k+2*k" using 0
+      by (smt (verit, ccfv_threshold) One_nat_def Suc_1 add_cancel_right_left le_add1 le_trans mult.commute mult_Suc
+      mult_le_cancel2 mult_le_mono1 mult_numeral_1_right numeral_3_eq_3 numeral_Bit0 numerals(1) one_le_mult_iff plus_1_eq_Suc)
+    moreover have "ALL p. rho (k+2*k) p ~= Asleep"
+      using nonAsleepAgain2[of 0 _ "k+2*k"] assms 0 by (metis add.left_neutral proc_state.simps(3))
+    have "ALL p sp. rho (t+6*N*k) p = Active sp --> level sp = 2"
+    proof
+      fix p
+      obtain sp where "rho (k+2*k) p = Active sp" using act by (cases "rho (k+2*k) p") auto
+      hence "ALL sp. rho (t+6*N*k) p = Active sp --> level sp >= 2"
+        using level_growing[of "k+2*k" _ _ "t+6*N*k-(k+2*k)"]
+        by (metis calculation(2) calculation(3) le_add_diff_inverse)
+      thus "ALL sp. rho (t+6*N*k) p = Active sp --> level sp = 2"
+        using A2_bis[of "t+6*N*k" p] by auto
+    qed
+    thus "k_mod.liveness rho (t + 6 * N * k)" using act unfolding k_mod.liveness_def by (meson nonAsleepAgain2)
+  qed
+qed
+
 
 
 end

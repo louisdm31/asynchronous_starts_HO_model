@@ -1,4 +1,4 @@
-theory GenSynchMod
+theory SynchMod
 imports "../HOModel"
 begin
 
@@ -92,17 +92,17 @@ definition gen_HOMachine where
 |)"
 
 definition liveness where
-"liveness rho == ALL p. EX t s. rho t p = Active s & level s = 2"
+"liveness rho b == ALL p. EX s. rho b p = Active s & level s = 2"
 
 definition safety where
 "safety rho == EX c. ALL p rf s ss. rho rf p = Active s -->
                 (level s < 2) --> rho (Suc rf) p = Active ss --> level ss = 2 --> rf mod k = c"
 
- text ‹
+ text \<open>
  \DefineSnippet{modksynch}{
     @{thm [display] safety}
     @{thm [display] (concl) liveness}
  }%EndSnippet
- ›
+ \<close>
 end
 end

@@ -3,8 +3,8 @@ The whole paper can be found at [ref](https://link.springer.com/chapter/10.1007/
 The proof, written using the Isabelle proof assistant, is structured as follows:
 
 - The [HOModel](./HOModel.thy) file contains the basic primitives of our computational model.
-- The [SynchMod](SynchMod.thy) file contains the definition of out algorithm.
+- The [SynchMod](SynchMod.thy) file contains the definition of our algorithm.
 - The [SynchModProof](SynchModProof.thy) file contains the proof or both safety and liveness properties.
 - As the formal definitions in [SynchMod](SynchMod.thy) are, at first glance, quite different from 
-the pseudo-code found in the article, we also provide [PseudoCodeEquiv](PseudoCodeEquiv.thy), which
-proves the equivalence between the pseudo-code and the formal definition.
+the pseudo-code of the paper, we also provide [PseudoCodeEquiv](PseudoCodeEquiv.thy), which
+proves the equivalence between both of them.
